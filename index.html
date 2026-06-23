@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Berkeley Homeless Union — Landless, Not Voiceless</title>
+  <meta name="description" content="The Berkeley Homeless Union is a membership union of people experiencing homelessness in Berkeley, CA — organizing for dignity, housing, and civil rights." />
+
+  <!-- Leaflet map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,900;1,700&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --black: #0A0A0A;
+      --ink: #1A1A1A;
+      --dark: #2A2A2A;
+      --mid: #666;
+      --light: #B0B0B0;
+      --rule: #E0E0E0;
+      --off: #F5F4F2;
+      --white: #FFFFFF;
+      --accent: #0A0A0A;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--white);
+      color: var(--black);
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Utility ── */
+    .container { max-width: 1160px; margin: 0 auto; padding: 0 2rem; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+    img { display: block; max-width: 100%; }
+
+    /* ── NAV ── */
+    #nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      background: var(--white);
+      border-bottom: 1px solid var(--rule);
+      height: 60px;
+      display: flex; align-items: center;
+    }
+    #nav .container {
+      display: flex; align-items: center;
+      justify-content: space-between; width: 100%;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 0.75rem;
+      text-decoration: none; color: var(--black);
+    }
+    .nav-logo svg { width: 36px; height: 36px; flex-shrink: 0; }
+    .nav-logo-text {
+      font-size: 0.8rem; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase;
+    }
+    .nav-links {
+      display: flex; align-items: center; gap: 2rem;
+      list-style: none;
+    }
+    .nav-links a {
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--mid); text-decoration: none;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover, .nav-links a.active { color: var(--black); }
+    .nav-cta {
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      background: var(--black); color: var(--white);
+      padding: 0.5rem 1.25rem;
+      text-decoration: none; border: none; cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .nav-cta:hover { opacity: 0.8; }
+
+    /* ── HERO ── */
+    #hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      justify-content: flex-end;
+      padding-top: 60px;
+      position: relative;
+      overflow: hidden;
+      background: var(--black);
+    }
+    .hero-body {
+      position: relative; z-index: 2;
+      padding: 4rem 2rem 5rem;
+      max-width: 1160px; margin: 0 auto; width: 100%;
+    }
+    .hero-eyebrow {
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.25em; text-transform: uppercase;
+      color: var(--light);
+      margin-bottom: 1.5rem;
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    .hero-eyebrow::before {
+      content: ''; display: inline-block;
+      width: 2rem; height: 1px; background: var(--mid);
+    }
+    .hero-logo-wrap {
+      display: flex; align-items: flex-start; gap: 3rem;
+      flex-wrap: wrap;
+    }
+    .hero-logo {
+      width: 200px; height: 200px; flex-shrink: 0;
+      filter: invert(1);
+    }
+    .hero-title-group { flex: 1; min-width: 280px; }
+    .hero-title {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: clamp(3rem, 8vw, 7rem);
+      font-weight: 900; line-height: 0.95;
+      color: var(--white);
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+      letter-spacing: -0.02em;
+    }
+    .hero-title em {
+      font-style: italic; color: var(--white);
+      display: block;
+    }
+    .hero-tagline {
+      font-size: clamp(1rem, 2vw, 1.2rem);
+      color: #999;
+      max-width: 520px;
+      line-height: 1.7;
+      margin-bottom: 2.5rem;
+    }
+    .hero-actions { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
+    .btn-primary {
+      background: var(--white); color: var(--black);
+      font-size: 0.72rem; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      padding: 0.85rem 2rem;
+      text-decoration: none; display: inline-block;
+      transition: opacity 0.2s;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-ghost {
+      background: transparent; color: #999;
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;
+      transition: color 0.2s;
+    }
+    .btn-ghost:hover { color: var(--white); }
+    .hero-motto {
+      position: absolute; bottom: 2rem; right: 2rem;
+      font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.25em; text-transform: uppercase;
+      color: #444;
+      writing-mode: vertical-rl; text-orientation: mixed;
+    }
+
+    /* ── ALERT TICKER ── */
+    #alert-ticker {
+      background: var(--ink);
+      border-top: 1px solid #333;
+      border-bottom: 1px solid #333;
+      padding: 0.6rem 0;
+      overflow: hidden;
+    }
+    .ticker-inner {
+      display: flex; align-items: center; gap: 3rem;
+      white-space: nowrap;
+      animation: ticker 40s linear infinite;
+    }
+    .ticker-item {
+      font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: #888;
+      flex-shrink: 0;
+    }
+    .ticker-item a { color: #bbb; text-decoration: none; }
+    .ticker-item a:hover { color: #fff; }
+    .ticker-sep { color: #444; font-size: 1rem; }
+    @keyframes ticker {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    /* ── SECTION STRUCTURE ── */
+    section { padding: 6rem 0; }
+    .section-header { margin-bottom: 3.5rem; }
+    .section-label {
+      font-size: 0.68rem; font-weight: 800;
+      letter-spacing: 0.25em; text-transform: uppercase;
+      color: var(--mid);
+      display: flex; align-items: center; gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .section-label::before {
+      content: ''; width: 2rem; height: 1px;
+      background: currentColor; display: inline-block;
+    }
+    .section-title {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      font-weight: 900; line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: var(--black);
+    }
+    .section-title.light { color: var(--white); }
+    .section-intro {
+      font-size: 1.05rem; line-height: 1.75;
+      color: var(--mid); max-width: 600px;
+      margin-top: 1.25rem;
+    }
+    .section-intro.light { color: #888; }
+
+    /* ── ABOUT ── */
+    #about { background: var(--white); }
+    .about-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5rem; align-items: start;
+    }
+    .about-pull-quote {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: clamp(1.5rem, 3vw, 2.2rem);
+      font-weight: 700; line-height: 1.35;
+      font-style: italic;
+      color: var(--black);
+      border-left: 3px solid var(--black);
+      padding-left: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .about-body p {
+      font-size: 1rem; line-height: 1.8;
+      color: #444; margin-bottom: 1.25rem;
+    }
+    .about-body p strong { color: var(--black); font-weight: 700; }
+    .about-stats {
+      border-top: 1px solid var(--rule);
+      padding-top: 2.5rem;
+    }
+    .stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem 1rem; }
+    .stat-item {}
+    .stat-num {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 3rem; font-weight: 900;
+      line-height: 1; color: var(--black);
+      display: block;
+    }
+    .stat-label {
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--mid); margin-top: 0.25rem;
+      display: block;
+    }
+    .about-pillars { margin-top: 2.5rem; }
+    .pillar { padding: 1.5rem 0; border-bottom: 1px solid var(--rule); }
+    .pillar:first-child { border-top: 1px solid var(--rule); }
+    .pillar-label {
+      font-size: 0.68rem; font-weight: 800;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--mid); margin-bottom: 0.4rem;
+    }
+    .pillar-text {
+      font-size: 0.95rem; line-height: 1.65; color: var(--dark);
+    }
+
+    /* ── MAP ── */
+    #map-section { background: var(--black); padding: 6rem 0; }
+    .map-header { margin-bottom: 2.5rem; }
+    #sweep-map {
+      width: 100%; height: 560px;
+      border: 1px solid #333;
+    }
+    .map-legend {
+      display: flex; flex-wrap: wrap; gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .legend-item {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.75rem; font-weight: 600;
+      letter-spacing: 0.05em; color: #888;
+    }
+    .legend-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+    .map-caption {
+      margin-top: 1rem;
+      font-size: 0.78rem; color: #555;
+      line-height: 1.6;
+    }
+    .map-caption a { color: #888; }
+
+    /* Leaflet popup overrides */
+    .leaflet-popup-content-wrapper {
+      border-radius: 0 !important;
+      border: 1px solid #ccc;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+      font-family: 'Inter', sans-serif !important;
+    }
+    .leaflet-popup-content { margin: 1rem 1.25rem !important; }
+    .popup-source {
+      font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.15em; text-transform: uppercase;
+      color: #999; margin-bottom: 0.3rem;
+    }
+    .popup-title {
+      font-size: 0.95rem; font-weight: 700;
+      line-height: 1.3; margin-bottom: 0.5rem; color: #111;
+    }
+    .popup-date {
+      font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;
+    }
+    .popup-desc { font-size: 0.85rem; color: #555; line-height: 1.5; }
+    .popup-tag {
+      display: inline-block; margin-top: 0.75rem;
+      font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      padding: 0.25rem 0.6rem;
+      background: #111; color: #fff;
+    }
+    .popup-tag.active { background: #991B1B; }
+    .popup-tag.cleared { background: #374151; }
+
+    /* ── COURT ── */
+    #court { background: var(--off); }
+    .court-case-info {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 0; border: 1px solid var(--rule);
+      margin-bottom: 3.5rem;
+    }
+    .court-field {
+      padding: 1.25rem 1.5rem;
+      border-right: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+    }
+    .court-field:nth-child(3n) { border-right: none; }
+    .court-field:nth-last-child(-n+3) { border-bottom: none; }
+    .court-field-label {
+      font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--mid); margin-bottom: 0.3rem;
+    }
+    .court-field-val {
+      font-size: 0.9rem; font-weight: 600; color: var(--black);
+    }
+    /* Timeline */
+    .timeline { position: relative; }
+    .timeline::before {
+      content: ''; position: absolute;
+      left: 80px; top: 0; bottom: 0;
+      width: 1px; background: var(--rule);
+    }
+    .tl-item {
+      display: flex; gap: 2rem;
+      margin-bottom: 2rem; position: relative;
+    }
+    .tl-date {
+      width: 68px; text-align: right; flex-shrink: 0;
+      padding-top: 3px;
+      font-size: 0.68rem; font-weight: 800;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--mid); line-height: 1.3;
+    }
+    .tl-dot {
+      width: 13px; height: 13px;
+      border-radius: 50%; flex-shrink: 0;
+      margin-top: 4px; position: relative; z-index: 1;
+      background: var(--black); border: 2px solid var(--white);
+      outline: 2px solid var(--black);
+    }
+    .tl-dot.win { background: var(--black); }
+    .tl-dot.pending {
+      background: transparent;
+      border: 2px solid var(--black);
+      animation: blink 2s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%,100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+    .tl-content { flex: 1; }
+    .tl-badge {
+      display: inline-block; margin-bottom: 0.3rem;
+      font-size: 0.62rem; font-weight: 800;
+      letter-spacing: 0.15em; text-transform: uppercase;
+      padding: 0.2rem 0.55rem; background: var(--rule); color: var(--dark);
+    }
+    .tl-badge.win { background: var(--black); color: var(--white); }
+    .tl-badge.pending { background: var(--dark); color: var(--light); }
+    .tl-title {
+      font-size: 1rem; font-weight: 800;
+      color: var(--black); margin-bottom: 0.35rem;
+      line-height: 1.3;
+    }
+    .tl-text { font-size: 0.875rem; color: #555; line-height: 1.65; }
+    .court-docket-link {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      margin-top: 2.5rem;
+      font-size: 0.72rem; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      text-decoration: none; color: var(--black);
+      border-bottom: 1px solid var(--black);
+      padding-bottom: 0.15rem;
+      transition: opacity 0.2s;
+    }
+    .court-docket-link:hover { opacity: 0.6; }
+
+    /* ── NEWS ── */
+    #news { background: var(--white); }
+    .news-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      border-top: 1px solid var(--rule);
+    }
+    .news-card {
+      padding: 2rem 0 2rem 0;
+      border-bottom: 1px solid var(--rule);
+      border-right: 1px solid var(--rule);
+      padding-right: 2rem;
+      text-decoration: none; color: inherit;
+      display: block;
+      transition: background 0.15s;
+    }
+    .news-card:nth-child(3n) { border-right: none; padding-right: 0; }
+    .news-card:nth-child(3n+1) { padding-left: 0; }
+    .news-card:hover { background: var(--off); }
+    .news-card:hover .news-card-inner { background: var(--off); }
+    .news-card-inner { padding: 1.5rem 1.5rem 1.5rem 0; }
+    .news-card:nth-child(3n+1) .news-card-inner { padding-left: 0; }
+    .news-meta { margin-bottom: 0.75rem; }
+    .news-source {
+      font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--mid);
+    }
+    .news-date {
+      font-size: 0.75rem; color: var(--light); margin-top: 0.2rem;
+    }
+    .news-title {
+      font-size: 1rem; font-weight: 700;
+      line-height: 1.35; color: var(--black);
+    }
+    .news-excerpt {
+      font-size: 0.85rem; color: #666;
+      line-height: 1.6; margin-top: 0.6rem;
+    }
+    .news-read-more {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      margin-top: 1rem;
+      font-size: 0.7rem; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--mid); text-decoration: none;
+    }
+
+    /* ── EVENTS ── */
+    #events { background: var(--black); }
+    .events-list { border-top: 1px solid #222; }
+    .event-item {
+      display: flex; gap: 2.5rem; align-items: flex-start;
+      padding: 2rem 0;
+      border-bottom: 1px solid #222;
+    }
+    .event-date-col {
+      width: 80px; flex-shrink: 0; text-align: center;
+    }
+    .event-day {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 2.5rem; font-weight: 900;
+      line-height: 1; color: var(--white);
+      display: block;
+    }
+    .event-month {
+      font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: #555; display: block; margin-top: 0.2rem;
+    }
+    .event-year {
+      font-size: 0.65rem; color: #444;
+      display: block; margin-top: 0.1rem;
+    }
+    .event-content { flex: 1; }
+    .event-tag {
+      font-size: 0.62rem; font-weight: 800;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: #555; margin-bottom: 0.4rem;
+    }
+    .event-title {
+      font-size: 1.1rem; font-weight: 800;
+      color: var(--white); margin-bottom: 0.4rem;
+    }
+    .event-meta {
+      font-size: 0.8rem; color: #666;
+      margin-bottom: 0.5rem;
+    }
+    .event-desc { font-size: 0.875rem; color: #888; line-height: 1.6; }
+
+    /* ── GET INVOLVED ── */
+    #involved { background: var(--off); }
+    .involved-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 0; border: 1px solid var(--rule);
+    }
+    .involved-card {
+      padding: 2.5rem;
+      border-right: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+    }
+    .involved-card:nth-child(2n) { border-right: none; }
+    .involved-card:nth-last-child(-n+2) { border-bottom: none; }
+    .involved-number {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 3rem; font-weight: 900;
+      line-height: 1; color: var(--rule); margin-bottom: 1.25rem;
+    }
+    .involved-title {
+      font-size: 1.2rem; font-weight: 800;
+      color: var(--black); margin-bottom: 0.6rem;
+    }
+    .involved-text {
+      font-size: 0.9rem; color: #555;
+      line-height: 1.7; margin-bottom: 1.5rem;
+    }
+    .link-arrow {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      font-size: 0.72rem; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--black); text-decoration: none;
+      border-bottom: 1px solid var(--black);
+      padding-bottom: 0.15rem;
+      transition: opacity 0.2s;
+    }
+    .link-arrow:hover { opacity: 0.6; }
+    /* Bottom CTA bar */
+    .cta-bar {
+      background: var(--black); padding: 3rem 0; margin-top: 4rem;
+    }
+    .cta-bar .container {
+      display: flex; align-items: center;
+      justify-content: space-between; flex-wrap: wrap; gap: 1.5rem;
+    }
+    .cta-bar-text h3 {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.8rem; font-weight: 900;
+      color: var(--white); line-height: 1.2; margin-bottom: 0.4rem;
+    }
+    .cta-bar-text p { font-size: 0.9rem; color: #666; }
+    .cta-bar-links { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .cta-btn {
+      background: var(--white); color: var(--black);
+      font-size: 0.72rem; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      padding: 0.75rem 1.5rem;
+      text-decoration: none; transition: opacity 0.2s;
+    }
+    .cta-btn:hover { opacity: 0.8; }
+    .cta-btn.ghost {
+      background: transparent; color: #888;
+      border: 1px solid #333;
+    }
+    .cta-btn.ghost:hover { color: #fff; border-color: #666; }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--ink);
+      border-top: 1px solid #222;
+      padding: 4rem 0 2rem;
+    }
+    .footer-grid {
+      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 3rem; margin-bottom: 3rem;
+    }
+    .footer-brand-name {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.2rem; font-weight: 900;
+      color: var(--white); margin-bottom: 0.75rem;
+    }
+    .footer-brand-sub {
+      font-size: 0.78rem; color: #555;
+      line-height: 1.7; margin-bottom: 1.25rem;
+    }
+    .footer-social { display: flex; gap: 0.75rem; }
+    .footer-social a {
+      width: 34px; height: 34px;
+      border: 1px solid #2A2A2A;
+      display: flex; align-items: center; justify-content: center;
+      color: #555; font-size: 0.7rem; font-weight: 800;
+      text-decoration: none; letter-spacing: 0.05em;
+      text-transform: uppercase; transition: border-color 0.2s, color 0.2s;
+    }
+    .footer-social a:hover { border-color: #888; color: #ccc; }
+    .footer-col-label {
+      font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: #444; margin-bottom: 1rem;
+    }
+    .footer-links { list-style: none; }
+    .footer-links li { margin-bottom: 0.5rem; }
+    .footer-links a {
+      font-size: 0.85rem; color: #666;
+      text-decoration: none; transition: color 0.2s;
+    }
+    .footer-links a:hover { color: #ccc; }
+    .footer-bottom {
+      border-top: 1px solid #1A1A1A;
+      padding-top: 1.5rem;
+      display: flex; justify-content: space-between;
+      align-items: center; flex-wrap: wrap; gap: 0.5rem;
+    }
+    .footer-copy { font-size: 0.75rem; color: #3A3A3A; }
+    .footer-tagline {
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: #3A3A3A;
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      .about-grid { grid-template-columns: 1fr; gap: 3rem; }
+      .news-grid { grid-template-columns: 1fr 1fr; }
+      .news-card:nth-child(3n) { border-right: 1px solid var(--rule); padding-right: 2rem; }
+      .news-card:nth-child(2n) { border-right: none; padding-right: 0; }
+      .court-case-info { grid-template-columns: 1fr 1fr; }
+      .footer-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .hero-logo-wrap { flex-direction: column; }
+      .news-grid { grid-template-columns: 1fr; }
+      .news-card { border-right: none !important; padding-right: 0 !important; }
+      .court-case-info { grid-template-columns: 1fr; }
+      .involved-grid { grid-template-columns: 1fr; }
+      .involved-card:nth-child(2n) { border-right: 1px solid var(--rule); }
+      .footer-grid { grid-template-columns: 1fr; gap: 2rem; }
+      .timeline::before { left: 60px; }
+      .tl-date { width: 48px; font-size: 0.6rem; }
+      .event-item { gap: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAV ── -->
+  <nav id="nav">
+    <div class="container">
+      <a href="#hero" class="nav-logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="36" height="36" aria-label="BHU Logo"><defs><clipPath id="nc"><circle cx="250" cy="260" r="232"/></clipPath><path id="na" d="M 25,260 A 225,225 0 0,1 475,260"/></defs><circle cx="250" cy="260" r="245" fill="white"/><circle cx="250" cy="260" r="245" fill="none" stroke="black" stroke-width="7"/><circle cx="250" cy="260" r="232" fill="none" stroke="black" stroke-width="2"/><g clip-path="url(#nc)"><path d="M 195.5,252.3 L 37.1,230.1 A 215,215 0 0,1 49.3,183.0 L 198.7,240.3 A 55,55 0 0,0 195.5,252.3 Z" fill="black"/><path d="M 200.6,235.9 L 56.8,165.8 A 215,215 0 0,1 82.9,124.7 L 207.3,225.4 A 55,55 0 0,0 200.6,235.9 Z" fill="black"/><path d="M 210.4,221.8 L 95.3,110.6 A 215,215 0 0,1 132.9,79.7 L 220.0,213.9 A 55,55 0 0,0 210.4,221.8 Z" fill="black"/><path d="M 224.2,211.4 L 149.1,70.2 A 215,215 0 0,1 194.4,52.3 L 235.8,206.9 A 55,55 0 0,0 224.2,211.4 Z" fill="black"/><path d="M 240.4,205.8 L 212.7,48.3 A 215,215 0 0,1 261.3,45.3 L 252.9,205.1 A 55,55 0 0,0 240.4,205.8 Z" fill="black"/><path d="M 257.7,205.5 L 279.9,47.1 A 215,215 0 0,1 327.0,59.3 L 269.7,208.7 A 55,55 0 0,0 257.7,205.5 Z" fill="black"/><path d="M 274.1,210.6 L 344.2,66.8 A 215,215 0 0,1 385.3,92.9 L 284.6,217.3 A 55,55 0 0,0 274.1,210.6 Z" fill="black"/><path d="M 288.2,220.4 L 399.4,105.3 A 215,215 0 0,1 430.3,142.9 L 296.1,230.0 A 55,55 0 0,0 288.2,220.4 Z" fill="black"/><path d="M 298.6,234.2 L 439.8,159.1 A 215,215 0 0,1 457.7,204.4 L 303.1,245.8 A 55,55 0 0,0 298.6,234.2 Z" fill="black"/><rect x="15" y="257" width="470" height="8" fill="black"/><circle cx="250" cy="260" r="52" fill="white"/><path d="M 135,290 A 115,115 0 0,1 365,290" fill="none" stroke="black" stroke-width="20"/><path d="M 170,290 A 80,80 0 0,1 330,290" fill="none" stroke="black" stroke-width="20"/><g transform="translate(148,240)"><ellipse cx="0" cy="0" rx="14" ry="16" fill="black"/><circle cx="0" cy="-20" r="12" fill="black"/><polygon points="-8,-28 -14,-42 -2,-30" fill="black"/><polygon points="8,-28 14,-42 2,-30" fill="black"/><path d="M 12,8 Q 28,0 24,-12" fill="none" stroke="black" stroke-width="5" stroke-linecap="round"/></g><g transform="translate(352,240) scale(-1,1)"><ellipse cx="0" cy="0" rx="14" ry="16" fill="black"/><circle cx="0" cy="-20" r="12" fill="black"/><polygon points="-8,-28 -14,-42 -2,-30" fill="black"/><polygon points="8,-28 14,-42 2,-30" fill="black"/><path d="M 12,8 Q 28,0 24,-12" fill="none" stroke="black" stroke-width="5" stroke-linecap="round"/></g><path d="M 210,290 L 250,242 L 290,290 Z" fill="black"/><rect x="230" y="268" width="40" height="22" fill="black"/><rect x="237" y="268" width="26" height="22" fill="white"/><g transform="translate(60,310)"><rect x="0" y="-30" width="115" height="45" rx="4" fill="black"/><rect x="3" y="-25" width="20" height="22" rx="2" fill="white"/><rect x="35" y="-25" width="22" height="18" rx="2" fill="white"/><rect x="65" y="-25" width="22" height="18" rx="2" fill="white"/><circle cx="22" cy="18" r="11" fill="black" stroke="white" stroke-width="3"/><circle cx="22" cy="18" r="5" fill="white"/><circle cx="90" cy="18" r="11" fill="black" stroke="white" stroke-width="3"/><circle cx="90" cy="18" r="5" fill="white"/></g><g transform="translate(315,310)"><rect x="0" y="-30" width="120" height="45" rx="4" fill="black"/><rect x="5" y="-24" width="25" height="22" rx="2" fill="white"/><rect x="38" y="-24" width="28" height="18" rx="2" fill="white"/><circle cx="25" cy="18" r="11" fill="black" stroke="white" stroke-width="3"/><circle cx="25" cy="18" r="5" fill="white"/><circle cx="94" cy="18" r="11" fill="black" stroke="white" stroke-width="3"/><circle cx="94" cy="18" r="5" fill="white"/><circle cx="60" cy="-10" r="5" fill="white"/><path d="M 60,-4 L 60,8 L 50,18 M 60,2 L 70,2" stroke="white" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="53" cy="20" r="5" fill="none" stroke="white" stroke-width="2.5"/></g><path d="M 155,420 C 155,380 175,350 200,330 L 220,325 C 200,348 185,378 188,415 Z" fill="black"/><path d="M 200,330 Q 218,310 250,295 Q 270,287 270,300 Q 270,312 250,318 Q 240,322 228,328 L 220,325" fill="black"/><path d="M 345,420 C 345,380 325,350 300,330 L 280,325 C 300,348 315,378 312,415 Z" fill="black"/><path d="M 300,330 Q 282,310 250,295 Q 230,287 230,300 Q 230,312 250,318 Q 260,322 272,328 L 280,325" fill="black"/><path d="M 18,390 C 18,390 25,382 50,385 C 75,388 90,378 115,382 C 120,383 125,388 125,395 L 125,435 C 125,440 120,443 115,442 C 90,438 75,448 50,445 C 25,442 18,452 18,452 Z" fill="black"/><path d="M 127,386 C 127,386 145,378 175,380 C 205,382 220,375 250,377 C 280,379 295,372 325,374 C 330,374 333,379 333,384 L 333,436 C 333,441 330,446 325,446 C 295,448 280,441 250,443 C 220,445 205,438 175,440 C 145,442 127,450 127,450 Z" fill="black"/><path d="M 375,388 C 375,388 385,380 405,382 C 425,384 440,377 462,380 L 462,450 C 440,447 425,454 405,452 C 385,450 375,458 375,458 Z" fill="black"/><text font-family="Georgia,serif" font-style="italic" font-size="22" fill="white" text-anchor="middle"><tspan x="72" y="420">Landless</tspan></text><text font-family="Georgia,serif" font-style="italic" font-size="22" fill="white" text-anchor="middle"><tspan x="230" y="420">Not</tspan></text><text font-family="Georgia,serif" font-style="italic" font-size="22" fill="white" text-anchor="middle"><tspan x="418" y="420">Voiceless</tspan></text></g><text font-family="Arial Black,sans-serif" font-weight="900" font-size="30" fill="black" letter-spacing="2"><textPath href="#na" startOffset="3%">BERKELEY HOMELESS UNION</textPath></text></svg>
+        <span class="nav-logo-text">Berkeley Homeless Union</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#about">About</a></li>
+        <li><a href="#map-section">Sweep Map</a></li>
+        <li><a href="#court">Court Battle</a></li>
+        <li><a href="#news">News</a></li>
+        <li><a href="#events">Events</a></li>
+      </ul>
+      <a href="#involved" class="nav-cta">Get Involved</a>
+    </div>
+  </nav>
+
+  <!-- ── HERO ── -->
+  <section id="hero">
+    <div class="hero-body">
+      <p class="hero-eyebrow">Berkeley, California · Est. 2024 · 501(c)(3)</p>
+      <div class="hero-logo-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" class="hero-logo" aria-label="Berkeley Homeless Union — Landless, Not Voiceless"><defs><clipPath id="hc"><circle cx="250" cy="260" r="232"/></clipPath><path id="ha" d="M 25,260 A 225,225 0 0,1 475,260"/></defs><circle cx="250" cy="260" r="245" fill="white"/><circle cx="250" cy="260" r="245" fill="none" stroke="black" stroke-width="7"/><circle cx="250" cy="260" r="232" fill="none" stroke="black" stroke-width="2"/><g clip-path="url(#hc)"><path d="M 195.5,252.3 L 37.1,230.1 A 215,215 0 0,1 49.3,183.0 L 198.7,240.3 A 55,55 0 0,0 195.5,252.3 Z" fill="black"/><path d="M 200.6,235.9 L 56.8,165.8 A 215,215 0 0,1 82.9,124.7 L 207.3,225.4 A 55,55 0 0,0 200.6,235.9 Z" fill="black"/><path d="M 210.4,221.8 L 95.3,110.6 A 215,215 0 0,1 132.9,79.7 L 220.0,213.9 A 55,55 0 0,0 210.4,221.8 Z" fill="black"/><path d="M 224.2,211.4 L 149.1,70.2 A 215,215 0 0,1 194.4,52.3 L 235.8,206.9 A 55,55 0 0,0 224.2,211.4 Z" fill="black"/><path d="M 240.4,205.8 L 212.7,48.3 A 215,215 0 0,1 261.3,45.3 L 252.9,205.1 A 55,55 0 0,0 240.4,205.8 Z" fill="black"/><path d="M 257.7,205.5 L 279.9,47.1 A 215,215 0 0,1 327.0,59.3 L 269.7,208.7 A 55,55 0 0,0 257.7,205.5 Z" fill="black"/><path d="M 274.1,210.6 L 344.2,66.8 A 215,215 0 0,1 385.3,92.9 L 284.6,217.3 A 55,55 0 0,0 274.1,210.6 Z" fill="black"/><path d="M 288.2,220.4 L 399.4,105.3 A 215,215 0 0,1 430.3,142.9 L 296.1,230.0 A 55,55 0 0,0 288.2,220.4 Z" fill="black"/><path d="M 298.6,234.2 L 439.8,159.1 A 215,215 0 0,1 457.7,204.4 L 303.1,245.8 A 55,55 0 0,0 298.6,234.2 Z" fill="black"/><rect x="15" y="257" width="470" height="8" fill="black"/><circle cx="250" cy="260" r="52" fill="white"/><path d="M 135,290 A 115,115 0 0,1 365,290" fill="none" stroke="black" stroke-width="20"/><path d="M 170,290 A 80,80 0 0,1 330,290" fill="none" stroke="black" stroke-width="20"/><g transform="translate(148,240)"><ellipse cx="0" cy="0" rx="14" ry="16" fill="black"/><circle cx="0" cy="-20" r="12" fill="black"/><polygon points="-8,-28 -14,-42 -2,-30" fill="black"/><polygon points="8,-28 14,-42 2,-30" fill="black"/><path d="M 12,8 Q 28,0 24,-12" fill="none" stroke="black" stroke-width="5" stroke-linecap="round"/></g><g transform="translate(352,240) scale(-1,1)"><ellipse cx="0" cy="0" rx="14" ry="16" fill="black"/><circle cx="0" cy="-20" r="12" fill="black"/><polygon points="-8,-28 -14,-42 -2,-30" fill="black"/><polygon points="8,-28 14,-42 2,-30" fill="black"/><path d="M 12,8 Q 28,0 24,-12" fill="none" stroke="black" stroke-width="5" stroke-linecap="round"/></g><path d="M 210,290 L 250,242 L 290,290 Z" fill="black"/><rect x="230" y="268" width="40" height="22" fill="black"/><rect x="237" y="268" width="26" height="22" fill="white"/><g transform="translate(60,310)"><rect x="0" y="-30" width="115" height="45" rx="4" fill="black"/><rect x="3" y="-25" width="20" height="22" rx="2" fill="white"/><rect x="35" y="-25" width="22" height="18" rx="2" fill="white"/><rect x="65" y="-25" width="22" height="18" rx="2" fill="white"/><circle cx="22" cy="18" r="11" fill="black" stroke="white" stroke-width="3"/><circle cx="22" cy="18" r="5" fill="white"/><circle cx="90" cy="18" r="11" fill="black" stroke="white" stroke-width="3"/><circle cx="90" cy="18" r="5" fill="white"/></g><g transform="translate(315,310)"><rect x="0" y="-30" width="120" height="45" rx="4" fill="black"/><rect x="5" y="-24" width="25" height="22" rx="2" fill="white"/><rect x="38" y="-24" width="28" height="18" rx="2" fill="white"/><circle cx="25" cy="18" r="11" fill="black" stroke="white" stroke-width="3"/><circle cx="25" cy="18" r="5" fill="white"/><circle cx="94" cy="18" r="11" fill="black" stroke="white" stroke-width="3"/><circle cx="94" cy="18" r="5" fill="white"/><circle cx="60" cy="-10" r="5" fill="white"/><path d="M 60,-4 L 60,8 L 50,18 M 60,2 L 70,2" stroke="white" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="53" cy="20" r="5" fill="none" stroke="white" stroke-width="2.5"/></g><path d="M 155,420 C 155,380 175,350 200,330 L 220,325 C 200,348 185,378 188,415 Z" fill="black"/><path d="M 200,330 Q 218,310 250,295 Q 270,287 270,300 Q 270,312 250,318 Q 240,322 228,328 L 220,325" fill="black"/><path d="M 345,420 C 345,380 325,350 300,330 L 280,325 C 300,348 315,378 312,415 Z" fill="black"/><path d="M 300,330 Q 282,310 250,295 Q 230,287 230,300 Q 230,312 250,318 Q 260,322 272,328 L 280,325" fill="black"/><path d="M 18,390 C 18,390 25,382 50,385 C 75,388 90,378 115,382 C 120,383 125,388 125,395 L 125,435 C 125,440 120,443 115,442 C 90,438 75,448 50,445 C 25,442 18,452 18,452 Z" fill="black"/><path d="M 127,386 C 127,386 145,378 175,380 C 205,382 220,375 250,377 C 280,379 295,372 325,374 C 330,374 333,379 333,384 L 333,436 C 333,441 330,446 325,446 C 295,448 280,441 250,443 C 220,445 205,438 175,440 C 145,442 127,450 127,450 Z" fill="black"/><path d="M 375,388 C 375,388 385,380 405,382 C 425,384 440,377 462,380 L 462,450 C 440,447 425,454 405,452 C 385,450 375,458 375,458 Z" fill="black"/><text font-family="Georgia,serif" font-style="italic" font-size="22" fill="white" text-anchor="middle"><tspan x="72" y="420">Landless</tspan></text><text font-family="Georgia,serif" font-style="italic" font-size="22" fill="white" text-anchor="middle"><tspan x="230" y="420">Not</tspan></text><text font-family="Georgia,serif" font-style="italic" font-size="22" fill="white" text-anchor="middle"><tspan x="418" y="420">Voiceless</tspan></text></g><text font-family="Arial Black,sans-serif" font-weight="900" font-size="30" fill="black" letter-spacing="2"><textPath href="#ha" startOffset="3%">BERKELEY HOMELESS UNION</textPath></text></svg>
+        <div class="hero-title-group">
+          <h1 class="hero-title">
+            Berkeley<br>
+            <em>Homeless</em><br>
+            Union
+          </h1>
+          <p class="hero-tagline">
+            We are the unhoused — a membership union organizing for dignity,
+            housing, and civil rights in Berkeley. Not a charity. A union.
+          </p>
+          <div class="hero-actions">
+            <a href="#involved" class="btn-primary">Join the Union</a>
+            <a href="#court" class="btn-ghost">Our Federal Lawsuit →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="hero-motto">Landless · Not · Voiceless</span>
+  </section>
+
+  <!-- ── TICKER ── -->
+  <div id="alert-ticker" aria-label="Live case update">
+    <div class="ticker-inner" id="ticker-inner"></div>
+  </div>
+
+  <!-- ── ABOUT ── -->
+  <section id="about">
+    <div class="container">
+      <div class="about-grid">
+        <div>
+          <div class="section-header">
+            <p class="section-label">About Us</p>
+            <h2 class="section-title">Not a service agency.<br>A union.</h2>
+          </div>
+          <blockquote class="about-pull-quote">
+            "The goal is really to uplift the voices of unhoused people and their experiences
+            and to bargain for fair treatment. As a union, there is power in numbers."
+          </blockquote>
+          <p style="font-size:0.82rem;color:var(--mid);margin-bottom:1.5rem;font-style:italic;">
+            — Yesica Prado, Co-Founder
+          </p>
+          <div class="about-body">
+            <p>
+              The Berkeley Homeless Union was founded in <strong>July 2024</strong> by
+              <strong>Yesica Prado</strong> and <strong>Gordon Gilmore</strong> in direct
+              response to the U.S. Supreme Court's ruling in <em>City of Grants Pass v. Johnson</em>,
+              which gave cities the green light to criminalize homelessness even when no shelter exists.
+            </p>
+            <p>
+              We are a membership organization of people who are or have been unhoused.
+              As a union, we hold legal standing to file lawsuits, submit ADA accommodation
+              requests, and negotiate with the city — without waiting for a nonprofit to act on
+              our behalf.
+            </p>
+            <p>
+              We conduct on-the-ground outreach across Berkeley's encampments, going from
+              RV to tent, building collective power one member at a time.
+            </p>
+          </div>
+        </div>
+        <div>
+          <div class="about-stats">
+            <div class="stat-row">
+              <div class="stat-item">
+                <span class="stat-num">47+</span>
+                <span class="stat-label">Members at Harrison Corridor</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-num">31</span>
+                <span class="stat-label">Members with Disabilities</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-num">8+</span>
+                <span class="stat-label">Encampment Sites Swept by City</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-num">2</span>
+                <span class="stat-label">Federal Lawsuits Filed</span>
+              </div>
+            </div>
+          </div>
+          <div class="about-pillars">
+            <div class="pillar">
+              <p class="pillar-label">Legal Standing</p>
+              <p class="pillar-text">As a membership union, we can file federal lawsuits and ADA accommodation requests directly on behalf of our members — giving unhoused people direct power in court.</p>
+            </div>
+            <div class="pillar">
+              <p class="pillar-label">Mutual Aid</p>
+              <p class="pillar-text">We run on-the-ground outreach across Berkeley's encampments, connecting residents with support and building collective power community by community.</p>
+            </div>
+            <div class="pillar">
+              <p class="pillar-label">Political Accountability</p>
+              <p class="pillar-text">We engage Berkeley officials, candidates, and the public — demanding the city live up to its progressive values and treat all residents with dignity.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── MAP ── -->
+  <section id="map-section">
+    <div class="container">
+      <div class="map-header">
+        <p class="section-label" style="color:#555;">
+          <span style="display:inline-block;width:2rem;height:1px;background:#555;"></span>
+          Documented Sweep Sites
+        </p>
+        <h2 class="section-title light">Berkeley's War on<br>the Unhoused</h2>
+        <p class="section-intro light" style="margin-top:1rem;">
+          Since the <em>Grants Pass</em> ruling, Berkeley has swept encampments across the city —
+          often without shelter offers and in violation of residents' rights.
+          Click each pin to read what happened.
+        </p>
+      </div>
+      <div id="sweep-map"></div>
+      <div class="map-legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#FFFFFF;border:1px solid #444;"></div>
+          <span>Active / Disputed Site</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#AAAAAA;border:1px solid #444;"></div>
+          <span>Cleared by City</span>
+        </div>
+      </div>
+      <p class="map-caption">
+        Sources: <a href="https://www.berkeleyside.org" target="_blank" rel="noopener">Berkeleyside</a>,
+        <a href="https://www.berkeleyscanner.com" target="_blank" rel="noopener">Berkeley Scanner</a>,
+        <a href="https://www.dailycal.org" target="_blank" rel="noopener">Daily Californian</a>,
+        court filings. Map compiled from news coverage 2024–2026. Some dates approximate.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── COURT ── -->
+  <section id="court">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label">Federal Lawsuit</p>
+        <h2 class="section-title">Taking Berkeley to<br>Federal Court</h2>
+        <p class="section-intro">
+          In February 2025, the Berkeley Homeless Union became one of the first
+          homeless-led unions in California to file a federal civil rights lawsuit
+          challenging encampment sweeps on 14th Amendment due process and ADA grounds.
+        </p>
+      </div>
+
+      <div class="court-case-info">
+        <div class="court-field">
+          <p class="court-field-label">Case Name</p>
+          <p class="court-field-val">Berkeley Homeless Union et al. v. City of Berkeley et al.</p>
+        </div>
+        <div class="court-field">
+          <p class="court-field-label">Court</p>
+          <p class="court-field-val">U.S. District Court, Northern District of California</p>
+        </div>
+        <div class="court-field">
+          <p class="court-field-label">Case Number</p>
+          <p class="court-field-val">25-cv-01414 · 4:25-cv-04449</p>
+        </div>
+        <div class="court-field">
+          <p class="court-field-label">Presiding Judge</p>
+          <p class="court-field-val">Hon. Edward M. Chen</p>
+        </div>
+        <div class="court-field">
+          <p class="court-field-label">Legal Claims</p>
+          <p class="court-field-val">14th Amendment Due Process · ADA Reasonable Accommodation</p>
+        </div>
+        <div class="court-field">
+          <p class="court-field-label">Status</p>
+          <p class="court-field-val">⚡ Active — Ongoing Litigation (2026)</p>
+        </div>
+      </div>
+
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-date">Jun<br>2024</div>
+          <div class="tl-dot"></div>
+          <div class="tl-content">
+            <span class="tl-badge">Trigger</span>
+            <h3 class="tl-title">Supreme Court Rules in Grants Pass v. Johnson</h3>
+            <p class="tl-text">The Supreme Court rules cities may enforce anti-camping ordinances even without available shelter — removing a key legal shield for unhoused people nationwide.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-date">Jul<br>2024</div>
+          <div class="tl-dot win"></div>
+          <div class="tl-content">
+            <span class="tl-badge win">Founded</span>
+            <h3 class="tl-title">Berkeley Homeless Union Established</h3>
+            <p class="tl-text">Yesica Prado and Gordon Gilmore found the BHU as a direct response, giving the unhoused community legal standing to fight back as a collective.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-date">Sep<br>2024</div>
+          <div class="tl-dot"></div>
+          <div class="tl-content">
+            <span class="tl-badge">Event</span>
+            <h3 class="tl-title">Berkeley Council Votes to Allow Sweeps Without Shelter</h3>
+            <p class="tl-text">In an 8-1 vote, Berkeley removes the requirement to provide shelter or housing before clearing encampments. BHU sends a formal legal threat letter to the Council.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-date">Nov–Dec<br>2024</div>
+          <div class="tl-dot"></div>
+          <div class="tl-content">
+            <span class="tl-badge">Swept</span>
+            <h3 class="tl-title">City Sweeps Multiple Encampments Without Shelter Offers</h3>
+            <p class="tl-text">Berkeley clears encampments at Old City Hall, Ohlone Park, Berkeley Corporation Yard, and 4th & Bancroft — several without offering any shelter alternative.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-date">Feb 13<br>2025</div>
+          <div class="tl-dot"></div>
+          <div class="tl-content">
+            <span class="tl-badge">Filed</span>
+            <h3 class="tl-title">Federal Lawsuit Filed: BHU v. City of Berkeley</h3>
+            <p class="tl-text">BHU files in the Northern District of California to block the Harrison Corridor sweep. Raises state-created danger (14th Amendment) and ADA reasonable accommodation claims for 31 disabled residents.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-date">Feb<br>2025</div>
+          <div class="tl-dot win"></div>
+          <div class="tl-content">
+            <span class="tl-badge win">Victory</span>
+            <h3 class="tl-title">Federal Judge Grants Temporary Restraining Order</h3>
+            <p class="tl-text">Judge Chen blocks Berkeley from clearing the Harrison encampment while the case proceeds. A major early win establishing the court's willingness to protect unhoused residents.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-date">Jun 12<br>2025</div>
+          <div class="tl-dot win"></div>
+          <div class="tl-content">
+            <span class="tl-badge win">Victory</span>
+            <h3 class="tl-title">Court Rules: Disabled Residents Cannot Be Swept</h3>
+            <p class="tl-text">Judge Chen rules Berkeley may clear the broader encampment, but residents with disabilities and their property must be permitted to stay as a required ADA accommodation — a landmark ruling for disability rights in homelessness law.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-date">Sep<br>2025</div>
+          <div class="tl-dot"></div>
+          <div class="tl-content">
+            <span class="tl-badge">Update</span>
+            <h3 class="tl-title">Settlement Talks Collapse</h3>
+            <p class="tl-text">A settlement judge declares "a complete breakdown in settlement discussions" and returns the case to Judge Chen. BHU continues pressing for full injunctive relief.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-date">2026<br>Ongoing</div>
+          <div class="tl-dot pending"></div>
+          <div class="tl-content">
+            <span class="tl-badge pending">Active</span>
+            <h3 class="tl-title">Litigation Continues — BHU Fights On</h3>
+            <p class="tl-text">The case remains active in federal court. BHU continues pursuing systemic protections for all unhoused Berkeley residents. This fight is not over.</p>
+          </div>
+        </div>
+      </div>
+
+      <a href="https://cand.uscourts.gov/cases-e-filing/cases/325-cv-01414-emc/berkeley-homeless-union-et-al-v-city-berkeley-et-al"
+         target="_blank" rel="noopener" class="court-docket-link">
+        View Full Court Docket (PACER) →
+      </a>
+    </div>
+  </section>
+
+  <!-- ── NEWS ── -->
+  <section id="news">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label">Press &amp; Coverage</p>
+        <h2 class="section-title">In the News</h2>
+      </div>
+      <div class="news-grid">
+
+        <a href="https://www.dailycal.org/news/city/communities/fight-as-a-collective-berkeley-homeless-union-forms/article_29240f26-561d-11ef-92c7-8fc091f0b752.html"
+           target="_blank" rel="noopener" class="news-card">
+          <div class="news-card-inner">
+            <div class="news-meta">
+              <div class="news-source">The Daily Californian</div>
+              <div class="news-date">August 2024</div>
+            </div>
+            <h3 class="news-title">'Fight as a collective': Berkeley Homeless Union forms</h3>
+            <p class="news-excerpt">Co-founders Yesica Prado and Gordon Gilmore establish the union in response to the Supreme Court's Grants Pass ruling — giving the unhoused community direct legal standing.</p>
+            <span class="news-read-more">Read more →</span>
+          </div>
+        </a>
+
+        <a href="https://www.dailycal.org/news/city/city-of-berkeley-votes-to-clear-houseless-encampments-advocates-threaten-legal-action/article_b4508e54-7408-11ef-a767-1b06f1c59d43.html"
+           target="_blank" rel="noopener" class="news-card">
+          <div class="news-card-inner">
+            <div class="news-meta">
+              <div class="news-source">Daily Californian</div>
+              <div class="news-date">September 2024</div>
+            </div>
+            <h3 class="news-title">City of Berkeley votes to clear houseless encampments, advocates threaten legal action</h3>
+            <p class="news-excerpt">After Berkeley passed its sweeping resolution, BHU sent a formal legal threat letter to City Council — setting the stage for the federal lawsuit.</p>
+            <span class="news-read-more">Read more →</span>
+          </div>
+        </a>
+
+        <a href="https://localnewsmatters.org/2025/02/13/homeless-advocacy-group-sues-berkeley-to-prevent-city-from-sweeping-encampments/"
+           target="_blank" rel="noopener" class="news-card">
+          <div class="news-card-inner">
+            <div class="news-meta">
+              <div class="news-source">Local News Matters / Bay City News</div>
+              <div class="news-date">February 13, 2025</div>
+            </div>
+            <h3 class="news-title">Homeless advocacy group sues Berkeley to prevent city from sweeping encampments</h3>
+            <p class="news-excerpt">BHU files suit in federal court to stop the Harrison Corridor sweep, raising 14th Amendment due process and ADA claims for 47 residents — 31 with disabilities.</p>
+            <span class="news-read-more">Read more →</span>
+          </div>
+        </a>
+
+        <a href="https://www.courthousenews.com/berkeley-homeless-evictions-spark-clash-over-ada-public-safety/"
+           target="_blank" rel="noopener" class="news-card">
+          <div class="news-card-inner">
+            <div class="news-meta">
+              <div class="news-source">Courthouse News Service</div>
+              <div class="news-date">March 2025</div>
+            </div>
+            <h3 class="news-title">Berkeley homeless evictions spark clash over ADA, public safety</h3>
+            <p class="news-excerpt">BHU attorneys argue the city's sweep policies constitute a state-created danger and violate the ADA — a novel and potentially precedent-setting legal strategy.</p>
+            <span class="news-read-more">Read more →</span>
+          </div>
+        </a>
+
+        <a href="https://sfist.com/2025/06/12/federal-judge-says-berkeley-can-sweep-large-homeless-encampment-but-that-people-with-disabilities-can-stay/"
+           target="_blank" rel="noopener" class="news-card">
+          <div class="news-card-inner">
+            <div class="news-meta">
+              <div class="news-source">SFist</div>
+              <div class="news-date">June 12, 2025</div>
+            </div>
+            <h3 class="news-title">Federal Judge Says Berkeley Can Sweep Encampment, But People With Disabilities Can Stay</h3>
+            <p class="news-excerpt">A landmark ruling: Judge Chen finds that residents with disabilities must be permitted to remain as a required ADA reasonable accommodation — a major BHU victory.</p>
+            <span class="news-read-more">Read more →</span>
+          </div>
+        </a>
+
+        <a href="https://www.berkeleyscanner.com/2025/09/15/community/berkeley-harrison-homeless-camp-update-eighth-street-ruling/"
+           target="_blank" rel="noopener" class="news-card">
+          <div class="news-card-inner">
+            <div class="news-meta">
+              <div class="news-source">Berkeley Scanner</div>
+              <div class="news-date">September 15, 2025</div>
+            </div>
+            <h3 class="news-title">Berkeley can clear small part of homeless camp, judge says</h3>
+            <p class="news-excerpt">A federal judge allows partial clearing of the Harrison Street corridor while the broader ADA litigation continues, with protected individuals remaining on-site.</p>
+            <span class="news-read-more">Read more →</span>
+          </div>
+        </a>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ── EVENTS ── -->
+  <section id="events">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label" style="color:#555">
+          <span style="display:inline-block;width:2rem;height:1px;background:#555;margin-right:0.75rem;"></span>
+          Upcoming
+        </p>
+        <h2 class="section-title light">Join Us</h2>
+        <p class="section-intro light">Our power comes from showing up — to meetings, marches, court hearings, and each other.</p>
+      </div>
+      <div class="events-list">
+
+        <div class="event-item">
+          <div class="event-date-col">
+            <span class="event-day">15</span>
+            <span class="event-month">Jul</span>
+            <span class="event-year">2026</span>
+          </div>
+          <div class="event-content">
+            <p class="event-tag">General Meeting</p>
+            <h3 class="event-title">Monthly Community Meeting</h3>
+            <p class="event-meta">6:00 PM – 8:00 PM · South Berkeley Senior Center, 2939 Ellis St</p>
+            <p class="event-desc">Open meeting for all members and supporters. Court case updates, upcoming actions, and membership onboarding. All welcome.</p>
+          </div>
+        </div>
+
+        <div class="event-item">
+          <div class="event-date-col">
+            <span class="event-day">22</span>
+            <span class="event-month">Jul</span>
+            <span class="event-year">2026</span>
+          </div>
+          <div class="event-content">
+            <p class="event-tag">Workshop</p>
+            <h3 class="event-title">Know Your Rights: ADA &amp; Encampment Sweeps</h3>
+            <p class="event-meta">3:00 PM – 5:00 PM · Harrison Corridor Community Tent, 8th &amp; Harrison St</p>
+            <p class="event-desc">Learn how to file ADA accommodation requests, what to do during a sweep, and how to document civil rights violations. Free and open to all.</p>
+          </div>
+        </div>
+
+        <div class="event-item">
+          <div class="event-date-col">
+            <span class="event-day">05</span>
+            <span class="event-month">Aug</span>
+            <span class="event-year">2026</span>
+          </div>
+          <div class="event-content">
+            <p class="event-tag">Direct Action</p>
+            <h3 class="event-title">Solidarity March — Housing is a Human Right</h3>
+            <p class="event-meta">11:00 AM · MLK Jr. Civic Center Park, Berkeley</p>
+            <p class="event-desc">March with us for real housing solutions and an end to the criminalization of homelessness. Bring friends, make signs, show up.</p>
+          </div>
+        </div>
+
+        <div class="event-item">
+          <div class="event-date-col">
+            <span class="event-day">19</span>
+            <span class="event-month">Aug</span>
+            <span class="event-year">2026</span>
+          </div>
+          <div class="event-content">
+            <p class="event-tag">Court Support</p>
+            <h3 class="event-title">Pack the Courthouse — Federal Hearing</h3>
+            <p class="event-meta">9:00 AM · Ronald V. Dellums Federal Building, 1301 Clay St, Oakland</p>
+            <p class="event-desc">Show up to the next federal hearing in BHU v. City of Berkeley. Your presence matters. Follow our Instagram for confirmed courtroom details.</p>
+          </div>
+        </div>
+
+      </div>
+      <p style="font-size:0.75rem;color:#444;margin-top:1.5rem;">
+        * Dates shown are placeholders — confirm via
+        <a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener" style="color:#666;">@berkeley.homeless.union</a>
+        on Instagram.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── GET INVOLVED ── -->
+  <section id="involved">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label">Take Action</p>
+        <h2 class="section-title">Get Involved</h2>
+        <p class="section-intro">
+          Housing is a human right. Whether you're currently unhoused, formerly unhoused,
+          or a community member who gives a damn — there's a role for you.
+        </p>
+      </div>
+      <div class="involved-grid">
+        <div class="involved-card">
+          <div class="involved-number">01</div>
+          <h3 class="involved-title">Join the Union</h3>
+          <p class="involved-text">If you are or have been unhoused in Berkeley, become a member. Your membership gives BHU direct legal standing to fight on your behalf in court.</p>
+          <a href="mailto:berkeleyhomelessunion@gmail.com?subject=Join the Union" class="link-arrow">Become a Member →</a>
+        </div>
+        <div class="involved-card">
+          <div class="involved-number">02</div>
+          <h3 class="involved-title">Support Our Legal Fund</h3>
+          <p class="involved-text">Federal litigation costs money. Every dollar supports our attorneys and helps us keep fighting for the rights of unhoused Berkeley residents.</p>
+          <a href="https://www.facebook.com/people/Berkeley-Homeless-Union/61565118432924/" target="_blank" rel="noopener" class="link-arrow">Donate →</a>
+        </div>
+        <div class="involved-card">
+          <div class="involved-number">03</div>
+          <h3 class="involved-title">Volunteer</h3>
+          <p class="involved-text">We need help with street outreach, court support, media documentation, and mutual aid coordination. No special skills required — just show up.</p>
+          <a href="mailto:berkeleyhomelessunion@gmail.com?subject=Volunteer" class="link-arrow">Get In Touch →</a>
+        </div>
+        <div class="involved-card">
+          <div class="involved-number">04</div>
+          <h3 class="involved-title">Spread the Word</h3>
+          <p class="involved-text">Follow us on Instagram and Facebook, share our posts, and tell your network. Public attention is part of how we win.</p>
+          <a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener" class="link-arrow">Follow on Instagram →</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="cta-bar">
+      <div class="container">
+        <div class="cta-bar-text">
+          <h3>Stay in the Loop</h3>
+          <p>Court updates, events, and action alerts — direct from us.</p>
+        </div>
+        <div class="cta-bar-links">
+          <a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener" class="cta-btn">Instagram</a>
+          <a href="https://www.facebook.com/people/Berkeley-Homeless-Union/61565118432924/" target="_blank" rel="noopener" class="cta-btn ghost">Facebook</a>
+          <a href="mailto:berkeleyhomelessunion@gmail.com" class="cta-btn ghost">Email Us</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ── -->
+  <footer>
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand-name">Berkeley Homeless Union</div>
+          <p class="footer-brand-sub">
+            A membership union of people experiencing homelessness in Berkeley, CA —
+            organizing for dignity, housing, and civil rights since 2024.
+            <br><br>
+            Berkeley Homeless Union is a 501(c)(3) nonprofit organization.
+            Donations may be tax-deductible.
+          </p>
+          <div class="footer-social">
+            <a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener">IG</a>
+            <a href="https://www.facebook.com/people/Berkeley-Homeless-Union/61565118432924/" target="_blank" rel="noopener">FB</a>
+            <a href="mailto:berkeleyhomelessunion@gmail.com">✉</a>
+          </div>
+        </div>
+        <div>
+          <p class="footer-col-label">Navigate</p>
+          <ul class="footer-links">
+            <li><a href="#about">About Us</a></li>
+            <li><a href="#map-section">Sweep Map</a></li>
+            <li><a href="#court">Court Battle</a></li>
+            <li><a href="#news">Press</a></li>
+            <li><a href="#events">Events</a></li>
+            <li><a href="#involved">Get Involved</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="footer-col-label">Legal</p>
+          <ul class="footer-links">
+            <li><a href="https://cand.uscourts.gov/cases-e-filing/cases/325-cv-01414-emc/berkeley-homeless-union-et-al-v-city-berkeley-et-al" target="_blank" rel="noopener">Court Docket</a></li>
+            <li><a href="https://localnewsmatters.org/2025/02/13/homeless-advocacy-group-sues-berkeley-to-prevent-city-from-sweeping-encampments/" target="_blank" rel="noopener">Lawsuit Coverage</a></li>
+            <li><a href="https://sfist.com/2025/06/12/federal-judge-says-berkeley-can-sweep-large-homeless-encampment-but-that-people-with-disabilities-can-stay/" target="_blank" rel="noopener">Latest Ruling</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="footer-col-label">Contact</p>
+          <ul class="footer-links">
+            <li><a href="mailto:berkeleyhomelessunion@gmail.com">berkeleyhomelessunion@gmail.com</a></li>
+            <li><a href="#">Berkeley, California</a></li>
+            <li style="margin-top:1rem;">
+              <a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener">@berkeley.homeless.union</a>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span class="footer-copy">© 2026 Berkeley Homeless Union · berkeleyhomelessunion.org</span>
+        <span class="footer-tagline">Landless · Not · Voiceless</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ── SCRIPTS ── -->
+  <script>
+  // Ticker
+  const tickerItems = [
+    { text: '⚖️ ACTIVE CASE: Berkeley Homeless Union v. City of Berkeley — Case No. 25-cv-01414 — N.D. Cal.', link: 'https://cand.uscourts.gov/cases-e-filing/cases/325-cv-01414-emc/berkeley-homeless-union-et-al-v-city-berkeley-et-al' },
+    { text: '🏛️ ADA Rights Win: Federal judge rules disabled residents cannot be swept from Harrison Corridor', link: 'https://sfist.com/2025/06/12/federal-judge-says-berkeley-can-sweep-large-homeless-encampment-but-that-people-with-disabilities-can-stay/' },
+    { text: '✊ Join the Berkeley Homeless Union — Landless, Not Voiceless', link: '#involved' },
+    { text: '📣 Follow @berkeley.homeless.union on Instagram for live updates', link: 'https://www.instagram.com/berkeley.homeless.union/' },
+    { text: '💪 8+ sites swept by Berkeley since Grants Pass ruling — See the Map', link: '#map-section' },
+  ];
+  const ticker = document.getElementById('ticker-inner');
+  const build = () => tickerItems.map(t =>
+    `<span class="ticker-item"><a href="${t.link}">${t.text}</a></span><span class="ticker-sep">·</span>`
+  ).join('');
+  ticker.innerHTML = build() + build(); // duplicate for seamless loop
+
+  // Leaflet Map
+  const sweepSites = [
+    {
+      lat: 37.8816, lng: -122.2998,
+      name: "Harrison Corridor (8th & Harrison)",
+      date: "Feb 2025 – Ongoing",
+      status: "active",
+      desc: "The largest active disputed site. 47 residents, 31 with disabilities. Federal lawsuit filed here (BHU v. City of Berkeley). TRO won Feb 2025. ADA victory June 2025. Still in litigation 2026.",
+      source: "Local News Matters, Feb 13, 2025"
+    },
+    {
+      lat: 37.8601, lng: -122.2977,
+      name: "4th Street & Bancroft Way",
+      date: "Nov 20, 2024",
+      status: "cleared",
+      desc: "10 people living in tents were swept on November 20, 2024 at approximately 7am — without being offered any shelter beforehand. A protest encampment established by Where Do We Go Berkeley.",
+      source: "Berkeleyside, Nov 27, 2024"
+    },
+    {
+      lat: 37.8715, lng: -122.2730,
+      name: "Old City Hall (MLK Jr Way & Center St)",
+      date: "Dec 10, 2024",
+      status: "cleared",
+      desc: "A months-long protest encampment established Sept 28, 2024 to oppose Berkeley's new sweep policy. Cleared by city on December 10, 2024 after posting notice December 6.",
+      source: "Berkeleyside, Dec 16, 2024"
+    },
+    {
+      lat: 37.8753, lng: -122.2740,
+      name: "Ohlone Park (Hearst Ave & MLK Jr Way)",
+      date: "Nov 20, 2024 · Jul 9, 2025",
+      status: "cleared",
+      desc: "Swept twice: first as a protest encampment in November 2024, then as a permanent encampment on July 9, 2025 after months of legal battle and city notices. A BHU federal lawsuit attempted to block the 2025 sweep.",
+      source: "Berkeleyside, Jul 9, 2025"
+    },
+    {
+      lat: 37.8656, lng: -122.2848,
+      name: "Berkeley Corporation Yard",
+      date: "Nov 20, 2024",
+      status: "cleared",
+      desc: "One of three protest encampments swept simultaneously on November 20, 2024. Part of the city's coordinated response to advocates who had moved from Old City Hall.",
+      source: "Daily Californian, Nov 2024"
+    },
+    {
+      lat: 37.8845, lng: -122.3005,
+      name: "2nd Street & Cedar (RV Encampment)",
+      date: "Jan–Dec 2025",
+      status: "cleared",
+      desc: "A large encampment of unhoused residents in oversized vehicles (RVs). City offered a cash buyback program — 29 of 32 vehicle owners accepted. Resolved via this program over the course of 2025.",
+      source: "CBS San Francisco, 2025"
+    },
+    {
+      lat: 37.8700, lng: -122.2722,
+      name: "Civic Center Park (Allston & Milvia)",
+      date: "Apr 11, 2025",
+      status: "cleared",
+      desc: "Sixteen unhoused people moved into housing and remaining tents were removed on April 11, 2025. The west side of the park was fenced off following the clearance.",
+      source: "Berkeley Scanner, Apr 11, 2025"
+    },
+    {
+      lat: 37.8870, lng: -122.2983,
+      name: "Northwest Berkeley Industrial Zone (San Pablo / Gilman / Railroad)",
+      date: "Feb–Mar 2026",
+      status: "active",
+      desc: "In Feb 2026, the city posted closure notice for the area bounded by San Pablo Ave (E), Railroad tracks (W), Codornices Creek (N), and Gilman St (S) — encompassing numerous encampments. March 9, 2026 compliance deadline set.",
+      source: "Berkeley Scanner, Mar 3, 2026"
+    },
+    {
+      lat: 37.8770, lng: -122.2912,
+      name: "Unspecified N. Berkeley Site (Leptospirosis)",
+      date: "Feb 2026",
+      status: "active",
+      desc: "Berkeley ordered closure of an encampment in February 2026 citing leptospirosis (rat-borne disease) concerns — using public health justification as a basis for sweep. Location near north Berkeley.",
+      source: "Davis Vanguard, Feb 2026"
+    }
+  ];
+
+  document.addEventListener('DOMContentLoaded', function() {
+    // Custom icon
+    function makeIcon(status) {
+      const colors = { active: '#FFFFFF', cleared: '#AAAAAA', protest: '#888888' };
+      const fill = colors[status] || '#AAAAAA';
+      const innerFill = status === 'active' ? '#000' : '#333';
+      const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 20 12 20S24 21 24 12C24 5.37 18.63 0 12 0z" fill="${fill}" stroke="#222" stroke-width="1"/>
+        <circle cx="12" cy="12" r="5" fill="${innerFill}"/>
+      </svg>`;
+      return L.divIcon({
+        html: svgStr,
+        iconSize: [24, 32], iconAnchor: [12, 32], popupAnchor: [0, -32],
+        className: ''
+      });
+    }
+
+    const map = L.map('sweep-map', {
+      center: [37.8715, -122.2840],
+      zoom: 13,
+      zoomControl: true
+    });
+
+    // CartoDB Dark Matter — free, no API key required
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter_all/{z}/{x}/{y}{r}.png', {
+      subdomains: 'abcd',
+      maxZoom: 20,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }).addTo(map);
+
+    sweepSites.forEach(site => {
+      const icon = makeIcon(site.status);
+      const statusLabel = site.status === 'active'
+        ? '<span class="popup-tag active">Active / Disputed</span>'
+        : '<span class="popup-tag cleared">Cleared by City</span>';
+
+      const popupContent = `
+        <div class="popup-source">${site.source}</div>
+        <div class="popup-title">${site.name}</div>
+        <div class="popup-date">${site.date}</div>
+        <div class="popup-desc">${site.desc}</div>
+        ${statusLabel}
+      `;
+
+      L.marker([site.lat, site.lng], { icon })
+        .addTo(map)
+        .bindPopup(popupContent, { maxWidth: 280 });
+    });
+  });
+  </script>
+</body>
+</html>
