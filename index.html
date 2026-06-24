@@ -6,10 +6,6 @@
   <title>Berkeley Homeless Union — Landless, Not Voiceless</title>
   <meta name="description" content="The Berkeley Homeless Union is a membership union of people experiencing homelessness in Berkeley, CA — organizing for dignity, housing, and civil rights." />
 
-  <!-- Leaflet map -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -19,23 +15,27 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --black: #0A0A0A;
-      --ink: #1A1A1A;
-      --dark: #2A2A2A;
-      --mid: #666;
-      --light: #B0B0B0;
-      --rule: #E0E0E0;
-      --off: #F5F4F2;
-      --white: #FFFFFF;
-      --accent: #0A0A0A;
+      --black: #080808;
+      --ink: #000000;
+      --dark: #111111;
+      --mid: #C8A900;
+      --light: #F9E873;
+      --rule: #2F2F2F;
+      --off: #101010;
+      --white: #F8E86D;
+      --accent: #FFC700;
     }
 
     html { scroll-behavior: smooth; }
 
+    #hero, section {
+      scroll-margin-top: 80px;
+    }
+
     body {
       font-family: 'Inter', system-ui, sans-serif;
-      background: var(--white);
-      color: var(--black);
+      background: var(--black);
+      color: var(--white);
       font-size: 16px;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
@@ -49,8 +49,8 @@
     /* ── NAV ── */
     #nav {
       position: fixed; top: 0; left: 0; right: 0; z-index: 200;
-      background: var(--white);
-      border-bottom: 1px solid var(--rule);
+      background: var(--black);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
       height: 60px;
       display: flex; align-items: center;
     }
@@ -60,7 +60,7 @@
     }
     .nav-logo {
       display: flex; align-items: center; gap: 0.75rem;
-      text-decoration: none; color: var(--black);
+      text-decoration: none; color: var(--white);
     }
     .nav-logo svg { width: 36px; height: 36px; flex-shrink: 0; }
     .nav-logo-text {
@@ -74,14 +74,14 @@
     .nav-links a {
       font-size: 0.72rem; font-weight: 700;
       letter-spacing: 0.12em; text-transform: uppercase;
-      color: var(--mid); text-decoration: none;
+      color: rgba(248,232,109,0.9); text-decoration: none;
       transition: color 0.2s;
     }
-    .nav-links a:hover, .nav-links a.active { color: var(--black); }
+    .nav-links a:hover, .nav-links a.active { color: var(--white); }
     .nav-cta {
       font-size: 0.72rem; font-weight: 700;
       letter-spacing: 0.12em; text-transform: uppercase;
-      background: var(--black); color: var(--white);
+      background: var(--accent); color: var(--black);
       padding: 0.5rem 1.25rem;
       text-decoration: none; border: none; cursor: pointer;
       transition: opacity 0.2s;
@@ -138,14 +138,14 @@
     }
     .hero-tagline {
       font-size: clamp(1rem, 2vw, 1.2rem);
-      color: #999;
+      color: var(--light);
       max-width: 520px;
       line-height: 1.7;
       margin-bottom: 2.5rem;
     }
     .hero-actions { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
     .btn-primary {
-      background: var(--white); color: var(--black);
+      background: var(--accent); color: var(--black);
       font-size: 0.72rem; font-weight: 800;
       letter-spacing: 0.12em; text-transform: uppercase;
       padding: 0.85rem 2rem;
@@ -154,7 +154,7 @@
     }
     .btn-primary:hover { opacity: 0.85; }
     .btn-ghost {
-      background: transparent; color: #999;
+      background: transparent; color: var(--light);
       font-size: 0.72rem; font-weight: 700;
       letter-spacing: 0.12em; text-transform: uppercase;
       text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;
@@ -165,15 +165,15 @@
       position: absolute; bottom: 2rem; right: 2rem;
       font-size: 0.65rem; font-weight: 800;
       letter-spacing: 0.25em; text-transform: uppercase;
-      color: #444;
+      color: var(--light);
       writing-mode: vertical-rl; text-orientation: mixed;
     }
 
     /* ── ALERT TICKER ── */
     #alert-ticker {
-      background: var(--ink);
-      border-top: 1px solid #333;
-      border-bottom: 1px solid #333;
+      background: var(--black);
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
       padding: 0.6rem 0;
       overflow: hidden;
     }
@@ -185,12 +185,12 @@
     .ticker-item {
       font-size: 0.7rem; font-weight: 700;
       letter-spacing: 0.12em; text-transform: uppercase;
-      color: #888;
+      color: var(--light);
       flex-shrink: 0;
     }
-    .ticker-item a { color: #bbb; text-decoration: none; }
-    .ticker-item a:hover { color: #fff; }
-    .ticker-sep { color: #444; font-size: 1rem; }
+    .ticker-item a { color: var(--white); text-decoration: none; }
+    .ticker-item a:hover { color: var(--accent); }
+    .ticker-sep { color: var(--mid); font-size: 1rem; }
     @keyframes ticker {
       0% { transform: translateX(0); }
       100% { transform: translateX(-50%); }
@@ -223,7 +223,42 @@
       color: var(--mid); max-width: 600px;
       margin-top: 1.25rem;
     }
-    .section-intro.light { color: #888; }
+    .section-intro.light { color: var(--light); }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      gap: 1.5rem;
+    }
+    .card {
+      display: block;
+      padding: 2rem;
+      background: var(--off);
+      border: 1px solid var(--rule);
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.2s, border-color 0.2s, background 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent);
+      background: rgba(248,232,109,0.08);
+    }
+    .card-label {
+      display: inline-block;
+      font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--mid); margin-bottom: 0.75rem;
+    }
+    .card-title {
+      font-size: 1.1rem; font-weight: 900;
+      color: var(--white); line-height: 1.3;
+      margin-bottom: 0.75rem;
+    }
+    .card-copy {
+      font-size: 0.95rem; line-height: 1.7;
+      color: var(--light);
+    }
 
     /* ── ABOUT ── */
     #about { background: var(--white); }
@@ -244,7 +279,7 @@
     }
     .about-body p {
       font-size: 1rem; line-height: 1.8;
-      color: #444; margin-bottom: 1.25rem;
+      color: var(--dark); margin-bottom: 1.25rem;
     }
     .about-body p strong { color: var(--black); font-weight: 700; }
     .about-stats {
@@ -277,63 +312,6 @@
       font-size: 0.95rem; line-height: 1.65; color: var(--dark);
     }
 
-    /* ── MAP ── */
-    #map-section { background: var(--black); padding: 6rem 0; }
-    .map-header { margin-bottom: 2.5rem; }
-    #sweep-map {
-      width: 100%; height: 560px;
-      border: 1px solid #333;
-    }
-    .map-legend {
-      display: flex; flex-wrap: wrap; gap: 1.5rem;
-      margin-top: 1.5rem;
-    }
-    .legend-item {
-      display: flex; align-items: center; gap: 0.5rem;
-      font-size: 0.75rem; font-weight: 600;
-      letter-spacing: 0.05em; color: #888;
-    }
-    .legend-dot {
-      width: 10px; height: 10px; border-radius: 50%;
-    }
-    .map-caption {
-      margin-top: 1rem;
-      font-size: 0.78rem; color: #555;
-      line-height: 1.6;
-    }
-    .map-caption a { color: #888; }
-
-    /* Leaflet popup overrides */
-    .leaflet-popup-content-wrapper {
-      border-radius: 0 !important;
-      border: 1px solid #ccc;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
-      font-family: 'Inter', sans-serif !important;
-    }
-    .leaflet-popup-content { margin: 1rem 1.25rem !important; }
-    .popup-source {
-      font-size: 0.65rem; font-weight: 800;
-      letter-spacing: 0.15em; text-transform: uppercase;
-      color: #999; margin-bottom: 0.3rem;
-    }
-    .popup-title {
-      font-size: 0.95rem; font-weight: 700;
-      line-height: 1.3; margin-bottom: 0.5rem; color: #111;
-    }
-    .popup-date {
-      font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;
-    }
-    .popup-desc { font-size: 0.85rem; color: #555; line-height: 1.5; }
-    .popup-tag {
-      display: inline-block; margin-top: 0.75rem;
-      font-size: 0.65rem; font-weight: 800;
-      letter-spacing: 0.12em; text-transform: uppercase;
-      padding: 0.25rem 0.6rem;
-      background: #111; color: #fff;
-    }
-    .popup-tag.active { background: #991B1B; }
-    .popup-tag.cleared { background: #374151; }
-
     /* ── COURT ── */
     #court { background: var(--off); }
     .court-case-info {
@@ -354,7 +332,7 @@
       color: var(--mid); margin-bottom: 0.3rem;
     }
     .court-field-val {
-      font-size: 0.9rem; font-weight: 600; color: var(--black);
+      font-size: 0.9rem; font-weight: 600; color: var(--white);
     }
     /* Timeline */
     .timeline { position: relative; }
@@ -378,13 +356,13 @@
       width: 13px; height: 13px;
       border-radius: 50%; flex-shrink: 0;
       margin-top: 4px; position: relative; z-index: 1;
-      background: var(--black); border: 2px solid var(--white);
+      background: var(--white); border: 2px solid var(--accent);
       outline: 2px solid var(--black);
     }
-    .tl-dot.win { background: var(--black); }
+    .tl-dot.win { background: var(--accent); }
     .tl-dot.pending {
       background: transparent;
-      border: 2px solid var(--black);
+      border: 2px solid var(--white);
       animation: blink 2s ease-in-out infinite;
     }
     @keyframes blink {
@@ -395,23 +373,23 @@
       display: inline-block; margin-bottom: 0.3rem;
       font-size: 0.62rem; font-weight: 800;
       letter-spacing: 0.15em; text-transform: uppercase;
-      padding: 0.2rem 0.55rem; background: var(--rule); color: var(--dark);
+      padding: 0.2rem 0.55rem; background: var(--rule); color: var(--white);
     }
-    .tl-badge.win { background: var(--black); color: var(--white); }
+    .tl-badge.win { background: var(--accent); color: var(--black); }
     .tl-badge.pending { background: var(--dark); color: var(--light); }
     .tl-title {
       font-size: 1rem; font-weight: 800;
-      color: var(--black); margin-bottom: 0.35rem;
+      color: var(--white); margin-bottom: 0.35rem;
       line-height: 1.3;
     }
-    .tl-text { font-size: 0.875rem; color: #555; line-height: 1.65; }
+    .tl-text { font-size: 0.875rem; color: var(--mid); line-height: 1.65; }
     .court-docket-link {
       display: inline-flex; align-items: center; gap: 0.5rem;
       margin-top: 2.5rem;
       font-size: 0.72rem; font-weight: 800;
       letter-spacing: 0.12em; text-transform: uppercase;
-      text-decoration: none; color: var(--black);
-      border-bottom: 1px solid var(--black);
+      text-decoration: none; color: var(--white);
+      border-bottom: 1px solid var(--white);
       padding-bottom: 0.15rem;
       transition: opacity 0.2s;
     }
@@ -454,7 +432,7 @@
       line-height: 1.35; color: var(--black);
     }
     .news-excerpt {
-      font-size: 0.85rem; color: #666;
+      font-size: 0.85rem; color: var(--mid);
       line-height: 1.6; margin-top: 0.6rem;
     }
     .news-read-more {
@@ -467,11 +445,11 @@
 
     /* ── EVENTS ── */
     #events { background: var(--black); }
-    .events-list { border-top: 1px solid #222; }
+    .events-list { border-top: 1px solid var(--rule); }
     .event-item {
       display: flex; gap: 2.5rem; align-items: flex-start;
       padding: 2rem 0;
-      border-bottom: 1px solid #222;
+      border-bottom: 1px solid var(--rule);
     }
     .event-date-col {
       width: 80px; flex-shrink: 0; text-align: center;
@@ -485,27 +463,27 @@
     .event-month {
       font-size: 0.65rem; font-weight: 800;
       letter-spacing: 0.2em; text-transform: uppercase;
-      color: #555; display: block; margin-top: 0.2rem;
+      color: var(--light); display: block; margin-top: 0.2rem;
     }
     .event-year {
-      font-size: 0.65rem; color: #444;
+      font-size: 0.65rem; color: var(--rule);
       display: block; margin-top: 0.1rem;
     }
     .event-content { flex: 1; }
     .event-tag {
       font-size: 0.62rem; font-weight: 800;
       letter-spacing: 0.18em; text-transform: uppercase;
-      color: #555; margin-bottom: 0.4rem;
+      color: var(--light); margin-bottom: 0.4rem;
     }
     .event-title {
       font-size: 1.1rem; font-weight: 800;
       color: var(--white); margin-bottom: 0.4rem;
     }
     .event-meta {
-      font-size: 0.8rem; color: #666;
+      font-size: 0.8rem; color: var(--mid);
       margin-bottom: 0.5rem;
     }
-    .event-desc { font-size: 0.875rem; color: #888; line-height: 1.6; }
+    .event-desc { font-size: 0.875rem; color: var(--mid); line-height: 1.6; }
 
     /* ── GET INVOLVED ── */
     #involved { background: var(--off); }
@@ -530,7 +508,7 @@
       color: var(--black); margin-bottom: 0.6rem;
     }
     .involved-text {
-      font-size: 0.9rem; color: #555;
+      font-size: 0.9rem; color: var(--mid);
       line-height: 1.7; margin-bottom: 1.5rem;
     }
     .link-arrow {
@@ -545,7 +523,7 @@
     .link-arrow:hover { opacity: 0.6; }
     /* Bottom CTA bar */
     .cta-bar {
-      background: var(--black); padding: 3rem 0; margin-top: 4rem;
+      background: var(--white); padding: 3rem 0; margin-top: 4rem;
     }
     .cta-bar .container {
       display: flex; align-items: center;
@@ -554,28 +532,28 @@
     .cta-bar-text h3 {
       font-family: 'Playfair Display', Georgia, serif;
       font-size: 1.8rem; font-weight: 900;
-      color: var(--white); line-height: 1.2; margin-bottom: 0.4rem;
+      color: var(--black); line-height: 1.2; margin-bottom: 0.4rem;
     }
-    .cta-bar-text p { font-size: 0.9rem; color: #666; }
+    .cta-bar-text p { font-size: 0.9rem; color: var(--mid); }
     .cta-bar-links { display: flex; gap: 1rem; flex-wrap: wrap; }
     .cta-btn {
-      background: var(--white); color: var(--black);
+      background: var(--black); color: var(--white);
       font-size: 0.72rem; font-weight: 800;
       letter-spacing: 0.12em; text-transform: uppercase;
       padding: 0.75rem 1.5rem;
       text-decoration: none; transition: opacity 0.2s;
     }
-    .cta-btn:hover { opacity: 0.8; }
+    .cta-btn:hover { opacity: 0.85; }
     .cta-btn.ghost {
-      background: transparent; color: #888;
-      border: 1px solid #333;
+      background: transparent; color: var(--black);
+      border: 1px solid var(--black);
     }
-    .cta-btn.ghost:hover { color: #fff; border-color: #666; }
+    .cta-btn.ghost:hover { color: var(--accent); border-color: var(--accent); }
 
     /* ── FOOTER ── */
     footer {
-      background: var(--ink);
-      border-top: 1px solid #222;
+      background: var(--black);
+      border-top: 1px solid var(--rule);
       padding: 4rem 0 2rem;
     }
     .footer-grid {
@@ -588,7 +566,7 @@
       color: var(--white); margin-bottom: 0.75rem;
     }
     .footer-brand-sub {
-      font-size: 0.78rem; color: #555;
+      font-size: 0.78rem; color: var(--mid);
       line-height: 1.7; margin-bottom: 1.25rem;
     }
     .footer-social { display: flex; gap: 0.75rem; }
@@ -600,30 +578,30 @@
       text-decoration: none; letter-spacing: 0.05em;
       text-transform: uppercase; transition: border-color 0.2s, color 0.2s;
     }
-    .footer-social a:hover { border-color: #888; color: #ccc; }
+    .footer-social a:hover { border-color: var(--light); color: var(--light); }
     .footer-col-label {
       font-size: 0.65rem; font-weight: 800;
       letter-spacing: 0.2em; text-transform: uppercase;
-      color: #444; margin-bottom: 1rem;
+      color: var(--rule); margin-bottom: 1rem;
     }
     .footer-links { list-style: none; }
     .footer-links li { margin-bottom: 0.5rem; }
     .footer-links a {
-      font-size: 0.85rem; color: #666;
+      font-size: 0.85rem; color: var(--mid);
       text-decoration: none; transition: color 0.2s;
     }
-    .footer-links a:hover { color: #ccc; }
+    .footer-links a:hover { color: var(--light); }
     .footer-bottom {
       border-top: 1px solid #1A1A1A;
       padding-top: 1.5rem;
       display: flex; justify-content: space-between;
       align-items: center; flex-wrap: wrap; gap: 0.5rem;
     }
-    .footer-copy { font-size: 0.75rem; color: #3A3A3A; }
+    .footer-copy { font-size: 0.75rem; color: var(--rule); }
     .footer-tagline {
       font-size: 0.72rem; font-weight: 700;
       letter-spacing: 0.18em; text-transform: uppercase;
-      color: #3A3A3A;
+      color: var(--rule);
     }
 
     /* ── RESPONSIVE ── */
@@ -660,13 +638,13 @@
         <span class="nav-logo-text">Berkeley Homeless Union</span>
       </a>
       <ul class="nav-links">
-        <li><a href="#about">About</a></li>
-        <li><a href="#map-section">Sweep Map</a></li>
-        <li><a href="#court">Court Battle</a></li>
-        <li><a href="#news">News</a></li>
-        <li><a href="#events">Events</a></li>
+        <li><a href="index.html">About</a></li>
+        <li><a href="map.html">Sweep Map</a></li>
+        <li><a href="court.html">Court Battle</a></li>
+        <li><a href="news.html">Press</a></li>
+        <li><a href="events.html">Events</a></li>
       </ul>
-      <a href="#involved" class="nav-cta">Get Involved</a>
+      <a href="involved.html" class="nav-cta">Get Involved</a>
     </div>
   </nav>
 
@@ -687,8 +665,8 @@
             housing, and civil rights in Berkeley. Not a charity. A union.
           </p>
           <div class="hero-actions">
-            <a href="#involved" class="btn-primary">Join the Union</a>
-            <a href="#court" class="btn-ghost">Our Federal Lawsuit →</a>
+            <a href="involved.html" class="btn-primary">Join the Union</a>
+            <a href="court.html" class="btn-ghost">Our Federal Lawsuit →</a>
           </div>
         </div>
       </div>
@@ -776,391 +754,39 @@
     </div>
   </section>
 
-  <!-- ── MAP ── -->
-  <section id="map-section">
-    <div class="container">
-      <div class="map-header">
-        <p class="section-label" style="color:#555;">
-          <span style="display:inline-block;width:2rem;height:1px;background:#555;"></span>
-          Documented Sweep Sites
-        </p>
-        <h2 class="section-title light">Berkeley's War on<br>the Unhoused</h2>
-        <p class="section-intro light" style="margin-top:1rem;">
-          Since the <em>Grants Pass</em> ruling, Berkeley has swept encampments across the city —
-          often without shelter offers and in violation of residents' rights.
-          Click each pin to read what happened.
-        </p>
-      </div>
-      <div id="sweep-map"></div>
-      <div class="map-legend">
-        <div class="legend-item">
-          <div class="legend-dot" style="background:#FFFFFF;border:1px solid #444;"></div>
-          <span>Active / Disputed Site</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot" style="background:#AAAAAA;border:1px solid #444;"></div>
-          <span>Cleared by City</span>
-        </div>
-      </div>
-      <p class="map-caption">
-        Sources: <a href="https://www.berkeleyside.org" target="_blank" rel="noopener">Berkeleyside</a>,
-        <a href="https://www.berkeleyscanner.com" target="_blank" rel="noopener">Berkeley Scanner</a>,
-        <a href="https://www.dailycal.org" target="_blank" rel="noopener">Daily Californian</a>,
-        court filings. Map compiled from news coverage 2024–2026. Some dates approximate.
-      </p>
-    </div>
-  </section>
-
-  <!-- ── COURT ── -->
-  <section id="court">
+  <section id="highlights">
     <div class="container">
       <div class="section-header">
-        <p class="section-label">Federal Lawsuit</p>
-        <h2 class="section-title">Taking Berkeley to<br>Federal Court</h2>
-        <p class="section-intro">
-          In February 2025, the Berkeley Homeless Union became one of the first
-          homeless-led unions in California to file a federal civil rights lawsuit
-          challenging encampment sweeps on 14th Amendment due process and ADA grounds.
-        </p>
+        <p class="section-label">Explore</p>
+        <h2 class="section-title">What We Are Working On</h2>
+        <p class="section-intro">Find the sweep map, federal lawsuit updates, press coverage, event calendar, and ways to get involved on dedicated pages.</p>
       </div>
-
-      <div class="court-case-info">
-        <div class="court-field">
-          <p class="court-field-label">Case Name</p>
-          <p class="court-field-val">Berkeley Homeless Union et al. v. City of Berkeley et al.</p>
-        </div>
-        <div class="court-field">
-          <p class="court-field-label">Court</p>
-          <p class="court-field-val">U.S. District Court, Northern District of California</p>
-        </div>
-        <div class="court-field">
-          <p class="court-field-label">Case Number</p>
-          <p class="court-field-val">25-cv-01414 · 4:25-cv-04449</p>
-        </div>
-        <div class="court-field">
-          <p class="court-field-label">Presiding Judge</p>
-          <p class="court-field-val">Hon. Edward M. Chen</p>
-        </div>
-        <div class="court-field">
-          <p class="court-field-label">Legal Claims</p>
-          <p class="court-field-val">14th Amendment Due Process · ADA Reasonable Accommodation</p>
-        </div>
-        <div class="court-field">
-          <p class="court-field-label">Status</p>
-          <p class="court-field-val">⚡ Active — Ongoing Litigation (2026)</p>
-        </div>
-      </div>
-
-      <div class="timeline">
-        <div class="tl-item">
-          <div class="tl-date">Jun<br>2024</div>
-          <div class="tl-dot"></div>
-          <div class="tl-content">
-            <span class="tl-badge">Trigger</span>
-            <h3 class="tl-title">Supreme Court Rules in Grants Pass v. Johnson</h3>
-            <p class="tl-text">The Supreme Court rules cities may enforce anti-camping ordinances even without available shelter — removing a key legal shield for unhoused people nationwide.</p>
-          </div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-date">Jul<br>2024</div>
-          <div class="tl-dot win"></div>
-          <div class="tl-content">
-            <span class="tl-badge win">Founded</span>
-            <h3 class="tl-title">Berkeley Homeless Union Established</h3>
-            <p class="tl-text">Yesica Prado and Gordon Gilmore found the BHU as a direct response, giving the unhoused community legal standing to fight back as a collective.</p>
-          </div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-date">Sep<br>2024</div>
-          <div class="tl-dot"></div>
-          <div class="tl-content">
-            <span class="tl-badge">Event</span>
-            <h3 class="tl-title">Berkeley Council Votes to Allow Sweeps Without Shelter</h3>
-            <p class="tl-text">In an 8-1 vote, Berkeley removes the requirement to provide shelter or housing before clearing encampments. BHU sends a formal legal threat letter to the Council.</p>
-          </div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-date">Nov–Dec<br>2024</div>
-          <div class="tl-dot"></div>
-          <div class="tl-content">
-            <span class="tl-badge">Swept</span>
-            <h3 class="tl-title">City Sweeps Multiple Encampments Without Shelter Offers</h3>
-            <p class="tl-text">Berkeley clears encampments at Old City Hall, Ohlone Park, Berkeley Corporation Yard, and 4th & Bancroft — several without offering any shelter alternative.</p>
-          </div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-date">Feb 13<br>2025</div>
-          <div class="tl-dot"></div>
-          <div class="tl-content">
-            <span class="tl-badge">Filed</span>
-            <h3 class="tl-title">Federal Lawsuit Filed: BHU v. City of Berkeley</h3>
-            <p class="tl-text">BHU files in the Northern District of California to block the Harrison Corridor sweep. Raises state-created danger (14th Amendment) and ADA reasonable accommodation claims for 31 disabled residents.</p>
-          </div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-date">Feb<br>2025</div>
-          <div class="tl-dot win"></div>
-          <div class="tl-content">
-            <span class="tl-badge win">Victory</span>
-            <h3 class="tl-title">Federal Judge Grants Temporary Restraining Order</h3>
-            <p class="tl-text">Judge Chen blocks Berkeley from clearing the Harrison encampment while the case proceeds. A major early win establishing the court's willingness to protect unhoused residents.</p>
-          </div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-date">Jun 12<br>2025</div>
-          <div class="tl-dot win"></div>
-          <div class="tl-content">
-            <span class="tl-badge win">Victory</span>
-            <h3 class="tl-title">Court Rules: Disabled Residents Cannot Be Swept</h3>
-            <p class="tl-text">Judge Chen rules Berkeley may clear the broader encampment, but residents with disabilities and their property must be permitted to stay as a required ADA accommodation — a landmark ruling for disability rights in homelessness law.</p>
-          </div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-date">Sep<br>2025</div>
-          <div class="tl-dot"></div>
-          <div class="tl-content">
-            <span class="tl-badge">Update</span>
-            <h3 class="tl-title">Settlement Talks Collapse</h3>
-            <p class="tl-text">A settlement judge declares "a complete breakdown in settlement discussions" and returns the case to Judge Chen. BHU continues pressing for full injunctive relief.</p>
-          </div>
-        </div>
-        <div class="tl-item">
-          <div class="tl-date">2026<br>Ongoing</div>
-          <div class="tl-dot pending"></div>
-          <div class="tl-content">
-            <span class="tl-badge pending">Active</span>
-            <h3 class="tl-title">Litigation Continues — BHU Fights On</h3>
-            <p class="tl-text">The case remains active in federal court. BHU continues pursuing systemic protections for all unhoused Berkeley residents. This fight is not over.</p>
-          </div>
-        </div>
-      </div>
-
-      <a href="https://cand.uscourts.gov/cases-e-filing/cases/325-cv-01414-emc/berkeley-homeless-union-et-al-v-city-berkeley-et-al"
-         target="_blank" rel="noopener" class="court-docket-link">
-        View Full Court Docket (PACER) →
-      </a>
-    </div>
-  </section>
-
-  <!-- ── NEWS ── -->
-  <section id="news">
-    <div class="container">
-      <div class="section-header">
-        <p class="section-label">Press &amp; Coverage</p>
-        <h2 class="section-title">In the News</h2>
-      </div>
-      <div class="news-grid">
-
-        <a href="https://www.dailycal.org/news/city/communities/fight-as-a-collective-berkeley-homeless-union-forms/article_29240f26-561d-11ef-92c7-8fc091f0b752.html"
-           target="_blank" rel="noopener" class="news-card">
-          <div class="news-card-inner">
-            <div class="news-meta">
-              <div class="news-source">The Daily Californian</div>
-              <div class="news-date">August 2024</div>
-            </div>
-            <h3 class="news-title">'Fight as a collective': Berkeley Homeless Union forms</h3>
-            <p class="news-excerpt">Co-founders Yesica Prado and Gordon Gilmore establish the union in response to the Supreme Court's Grants Pass ruling — giving the unhoused community direct legal standing.</p>
-            <span class="news-read-more">Read more →</span>
-          </div>
+      <div class="cards-grid">
+        <a href="map.html" class="card">
+          <span class="card-label">Sweep Map</span>
+          <h3 class="card-title">Documented sweep sites across Berkeley</h3>
+          <p class="card-copy">Explore the map page for active disputes, cleared encampments, and the latest site-by-site coverage.</p>
         </a>
-
-        <a href="https://www.dailycal.org/news/city/city-of-berkeley-votes-to-clear-houseless-encampments-advocates-threaten-legal-action/article_b4508e54-7408-11ef-a767-1b06f1c59d43.html"
-           target="_blank" rel="noopener" class="news-card">
-          <div class="news-card-inner">
-            <div class="news-meta">
-              <div class="news-source">Daily Californian</div>
-              <div class="news-date">September 2024</div>
-            </div>
-            <h3 class="news-title">City of Berkeley votes to clear houseless encampments, advocates threaten legal action</h3>
-            <p class="news-excerpt">After Berkeley passed its sweeping resolution, BHU sent a formal legal threat letter to City Council — setting the stage for the federal lawsuit.</p>
-            <span class="news-read-more">Read more →</span>
-          </div>
+        <a href="court.html" class="card">
+          <span class="card-label">Court Battle</span>
+          <h3 class="card-title">Federal lawsuit timeline</h3>
+          <p class="card-copy">Follow BHU’s ongoing litigation, key rulings, and how the court case is shaping Berkeley's sweep policy.</p>
         </a>
-
-        <a href="https://localnewsmatters.org/2025/02/13/homeless-advocacy-group-sues-berkeley-to-prevent-city-from-sweeping-encampments/"
-           target="_blank" rel="noopener" class="news-card">
-          <div class="news-card-inner">
-            <div class="news-meta">
-              <div class="news-source">Local News Matters / Bay City News</div>
-              <div class="news-date">February 13, 2025</div>
-            </div>
-            <h3 class="news-title">Homeless advocacy group sues Berkeley to prevent city from sweeping encampments</h3>
-            <p class="news-excerpt">BHU files suit in federal court to stop the Harrison Corridor sweep, raising 14th Amendment due process and ADA claims for 47 residents — 31 with disabilities.</p>
-            <span class="news-read-more">Read more →</span>
-          </div>
+        <a href="news.html" class="card">
+          <span class="card-label">Press</span>
+          <h3 class="card-title">Media coverage</h3>
+          <p class="card-copy">Read reporting from local and national outlets on the union, sweeps, and civil rights claims.</p>
         </a>
-
-        <a href="https://www.courthousenews.com/berkeley-homeless-evictions-spark-clash-over-ada-public-safety/"
-           target="_blank" rel="noopener" class="news-card">
-          <div class="news-card-inner">
-            <div class="news-meta">
-              <div class="news-source">Courthouse News Service</div>
-              <div class="news-date">March 2025</div>
-            </div>
-            <h3 class="news-title">Berkeley homeless evictions spark clash over ADA, public safety</h3>
-            <p class="news-excerpt">BHU attorneys argue the city's sweep policies constitute a state-created danger and violate the ADA — a novel and potentially precedent-setting legal strategy.</p>
-            <span class="news-read-more">Read more →</span>
-          </div>
+        <a href="events.html" class="card">
+          <span class="card-label">Events</span>
+          <h3 class="card-title">Meetings and actions</h3>
+          <p class="card-copy">Get the latest dates for community meetings, trainings, marches, and courthouse support actions.</p>
         </a>
-
-        <a href="https://sfist.com/2025/06/12/federal-judge-says-berkeley-can-sweep-large-homeless-encampment-but-that-people-with-disabilities-can-stay/"
-           target="_blank" rel="noopener" class="news-card">
-          <div class="news-card-inner">
-            <div class="news-meta">
-              <div class="news-source">SFist</div>
-              <div class="news-date">June 12, 2025</div>
-            </div>
-            <h3 class="news-title">Federal Judge Says Berkeley Can Sweep Encampment, But People With Disabilities Can Stay</h3>
-            <p class="news-excerpt">A landmark ruling: Judge Chen finds that residents with disabilities must be permitted to remain as a required ADA reasonable accommodation — a major BHU victory.</p>
-            <span class="news-read-more">Read more →</span>
-          </div>
+        <a href="involved.html" class="card">
+          <span class="card-label">Get Involved</span>
+          <h3 class="card-title">Join the fight</h3>
+          <p class="card-copy">Become a member, donate, volunteer, or follow the union for direct action and legal support.</p>
         </a>
-
-        <a href="https://www.berkeleyscanner.com/2025/09/15/community/berkeley-harrison-homeless-camp-update-eighth-street-ruling/"
-           target="_blank" rel="noopener" class="news-card">
-          <div class="news-card-inner">
-            <div class="news-meta">
-              <div class="news-source">Berkeley Scanner</div>
-              <div class="news-date">September 15, 2025</div>
-            </div>
-            <h3 class="news-title">Berkeley can clear small part of homeless camp, judge says</h3>
-            <p class="news-excerpt">A federal judge allows partial clearing of the Harrison Street corridor while the broader ADA litigation continues, with protected individuals remaining on-site.</p>
-            <span class="news-read-more">Read more →</span>
-          </div>
-        </a>
-
-      </div>
-    </div>
-  </section>
-
-  <!-- ── EVENTS ── -->
-  <section id="events">
-    <div class="container">
-      <div class="section-header">
-        <p class="section-label" style="color:#555">
-          <span style="display:inline-block;width:2rem;height:1px;background:#555;margin-right:0.75rem;"></span>
-          Upcoming
-        </p>
-        <h2 class="section-title light">Join Us</h2>
-        <p class="section-intro light">Our power comes from showing up — to meetings, marches, court hearings, and each other.</p>
-      </div>
-      <div class="events-list">
-
-        <div class="event-item">
-          <div class="event-date-col">
-            <span class="event-day">15</span>
-            <span class="event-month">Jul</span>
-            <span class="event-year">2026</span>
-          </div>
-          <div class="event-content">
-            <p class="event-tag">General Meeting</p>
-            <h3 class="event-title">Monthly Community Meeting</h3>
-            <p class="event-meta">6:00 PM – 8:00 PM · South Berkeley Senior Center, 2939 Ellis St</p>
-            <p class="event-desc">Open meeting for all members and supporters. Court case updates, upcoming actions, and membership onboarding. All welcome.</p>
-          </div>
-        </div>
-
-        <div class="event-item">
-          <div class="event-date-col">
-            <span class="event-day">22</span>
-            <span class="event-month">Jul</span>
-            <span class="event-year">2026</span>
-          </div>
-          <div class="event-content">
-            <p class="event-tag">Workshop</p>
-            <h3 class="event-title">Know Your Rights: ADA &amp; Encampment Sweeps</h3>
-            <p class="event-meta">3:00 PM – 5:00 PM · Harrison Corridor Community Tent, 8th &amp; Harrison St</p>
-            <p class="event-desc">Learn how to file ADA accommodation requests, what to do during a sweep, and how to document civil rights violations. Free and open to all.</p>
-          </div>
-        </div>
-
-        <div class="event-item">
-          <div class="event-date-col">
-            <span class="event-day">05</span>
-            <span class="event-month">Aug</span>
-            <span class="event-year">2026</span>
-          </div>
-          <div class="event-content">
-            <p class="event-tag">Direct Action</p>
-            <h3 class="event-title">Solidarity March — Housing is a Human Right</h3>
-            <p class="event-meta">11:00 AM · MLK Jr. Civic Center Park, Berkeley</p>
-            <p class="event-desc">March with us for real housing solutions and an end to the criminalization of homelessness. Bring friends, make signs, show up.</p>
-          </div>
-        </div>
-
-        <div class="event-item">
-          <div class="event-date-col">
-            <span class="event-day">19</span>
-            <span class="event-month">Aug</span>
-            <span class="event-year">2026</span>
-          </div>
-          <div class="event-content">
-            <p class="event-tag">Court Support</p>
-            <h3 class="event-title">Pack the Courthouse — Federal Hearing</h3>
-            <p class="event-meta">9:00 AM · Ronald V. Dellums Federal Building, 1301 Clay St, Oakland</p>
-            <p class="event-desc">Show up to the next federal hearing in BHU v. City of Berkeley. Your presence matters. Follow our Instagram for confirmed courtroom details.</p>
-          </div>
-        </div>
-
-      </div>
-      <p style="font-size:0.75rem;color:#444;margin-top:1.5rem;">
-        * Dates shown are placeholders — confirm via
-        <a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener" style="color:#666;">@berkeley.homeless.union</a>
-        on Instagram.
-      </p>
-    </div>
-  </section>
-
-  <!-- ── GET INVOLVED ── -->
-  <section id="involved">
-    <div class="container">
-      <div class="section-header">
-        <p class="section-label">Take Action</p>
-        <h2 class="section-title">Get Involved</h2>
-        <p class="section-intro">
-          Housing is a human right. Whether you're currently unhoused, formerly unhoused,
-          or a community member who gives a damn — there's a role for you.
-        </p>
-      </div>
-      <div class="involved-grid">
-        <div class="involved-card">
-          <div class="involved-number">01</div>
-          <h3 class="involved-title">Join the Union</h3>
-          <p class="involved-text">If you are or have been unhoused in Berkeley, become a member. Your membership gives BHU direct legal standing to fight on your behalf in court.</p>
-          <a href="mailto:berkeleyhomelessunion@gmail.com?subject=Join the Union" class="link-arrow">Become a Member →</a>
-        </div>
-        <div class="involved-card">
-          <div class="involved-number">02</div>
-          <h3 class="involved-title">Support Our Legal Fund</h3>
-          <p class="involved-text">Federal litigation costs money. Every dollar supports our attorneys and helps us keep fighting for the rights of unhoused Berkeley residents.</p>
-          <a href="https://www.facebook.com/people/Berkeley-Homeless-Union/61565118432924/" target="_blank" rel="noopener" class="link-arrow">Donate →</a>
-        </div>
-        <div class="involved-card">
-          <div class="involved-number">03</div>
-          <h3 class="involved-title">Volunteer</h3>
-          <p class="involved-text">We need help with street outreach, court support, media documentation, and mutual aid coordination. No special skills required — just show up.</p>
-          <a href="mailto:berkeleyhomelessunion@gmail.com?subject=Volunteer" class="link-arrow">Get In Touch →</a>
-        </div>
-        <div class="involved-card">
-          <div class="involved-number">04</div>
-          <h3 class="involved-title">Spread the Word</h3>
-          <p class="involved-text">Follow us on Instagram and Facebook, share our posts, and tell your network. Public attention is part of how we win.</p>
-          <a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener" class="link-arrow">Follow on Instagram →</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="cta-bar">
-      <div class="container">
-        <div class="cta-bar-text">
-          <h3>Stay in the Loop</h3>
-          <p>Court updates, events, and action alerts — direct from us.</p>
-        </div>
-        <div class="cta-bar-links">
-          <a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener" class="cta-btn">Instagram</a>
-          <a href="https://www.facebook.com/people/Berkeley-Homeless-Union/61565118432924/" target="_blank" rel="noopener" class="cta-btn ghost">Facebook</a>
-          <a href="mailto:berkeleyhomelessunion@gmail.com" class="cta-btn ghost">Email Us</a>
-        </div>
       </div>
     </div>
   </section>
@@ -1187,12 +813,12 @@
         <div>
           <p class="footer-col-label">Navigate</p>
           <ul class="footer-links">
-            <li><a href="#about">About Us</a></li>
-            <li><a href="#map-section">Sweep Map</a></li>
-            <li><a href="#court">Court Battle</a></li>
-            <li><a href="#news">Press</a></li>
-            <li><a href="#events">Events</a></li>
-            <li><a href="#involved">Get Involved</a></li>
+            <li><a href="index.html">About Us</a></li>
+            <li><a href="map.html">Sweep Map</a></li>
+            <li><a href="court.html">Court Battle</a></li>
+            <li><a href="news.html">Press</a></li>
+            <li><a href="events.html">Events</a></li>
+            <li><a href="involved.html">Get Involved</a></li>
           </ul>
         </div>
         <div>
@@ -1227,141 +853,16 @@
   const tickerItems = [
     { text: '⚖️ ACTIVE CASE: Berkeley Homeless Union v. City of Berkeley — Case No. 25-cv-01414 — N.D. Cal.', link: 'https://cand.uscourts.gov/cases-e-filing/cases/325-cv-01414-emc/berkeley-homeless-union-et-al-v-city-berkeley-et-al' },
     { text: '🏛️ ADA Rights Win: Federal judge rules disabled residents cannot be swept from Harrison Corridor', link: 'https://sfist.com/2025/06/12/federal-judge-says-berkeley-can-sweep-large-homeless-encampment-but-that-people-with-disabilities-can-stay/' },
-    { text: '✊ Join the Berkeley Homeless Union — Landless, Not Voiceless', link: '#involved' },
+    { text: '✊ Join the Berkeley Homeless Union — Landless, Not Voiceless', link: 'involved.html' },
     { text: '📣 Follow @berkeley.homeless.union on Instagram for live updates', link: 'https://www.instagram.com/berkeley.homeless.union/' },
-    { text: '💪 8+ sites swept by Berkeley since Grants Pass ruling — See the Map', link: '#map-section' },
+    { text: '💪 8+ sites swept by Berkeley since Grants Pass ruling — See the Map', link: 'map.html' },
   ];
+
   const ticker = document.getElementById('ticker-inner');
   const build = () => tickerItems.map(t =>
     `<span class="ticker-item"><a href="${t.link}">${t.text}</a></span><span class="ticker-sep">·</span>`
   ).join('');
   ticker.innerHTML = build() + build(); // duplicate for seamless loop
-
-  // Leaflet Map
-  const sweepSites = [
-    {
-      lat: 37.8816, lng: -122.2998,
-      name: "Harrison Corridor (8th & Harrison)",
-      date: "Feb 2025 – Ongoing",
-      status: "active",
-      desc: "The largest active disputed site. 47 residents, 31 with disabilities. Federal lawsuit filed here (BHU v. City of Berkeley). TRO won Feb 2025. ADA victory June 2025. Still in litigation 2026.",
-      source: "Local News Matters, Feb 13, 2025"
-    },
-    {
-      lat: 37.8601, lng: -122.2977,
-      name: "4th Street & Bancroft Way",
-      date: "Nov 20, 2024",
-      status: "cleared",
-      desc: "10 people living in tents were swept on November 20, 2024 at approximately 7am — without being offered any shelter beforehand. A protest encampment established by Where Do We Go Berkeley.",
-      source: "Berkeleyside, Nov 27, 2024"
-    },
-    {
-      lat: 37.8715, lng: -122.2730,
-      name: "Old City Hall (MLK Jr Way & Center St)",
-      date: "Dec 10, 2024",
-      status: "cleared",
-      desc: "A months-long protest encampment established Sept 28, 2024 to oppose Berkeley's new sweep policy. Cleared by city on December 10, 2024 after posting notice December 6.",
-      source: "Berkeleyside, Dec 16, 2024"
-    },
-    {
-      lat: 37.8753, lng: -122.2740,
-      name: "Ohlone Park (Hearst Ave & MLK Jr Way)",
-      date: "Nov 20, 2024 · Jul 9, 2025",
-      status: "cleared",
-      desc: "Swept twice: first as a protest encampment in November 2024, then as a permanent encampment on July 9, 2025 after months of legal battle and city notices. A BHU federal lawsuit attempted to block the 2025 sweep.",
-      source: "Berkeleyside, Jul 9, 2025"
-    },
-    {
-      lat: 37.8656, lng: -122.2848,
-      name: "Berkeley Corporation Yard",
-      date: "Nov 20, 2024",
-      status: "cleared",
-      desc: "One of three protest encampments swept simultaneously on November 20, 2024. Part of the city's coordinated response to advocates who had moved from Old City Hall.",
-      source: "Daily Californian, Nov 2024"
-    },
-    {
-      lat: 37.8845, lng: -122.3005,
-      name: "2nd Street & Cedar (RV Encampment)",
-      date: "Jan–Dec 2025",
-      status: "cleared",
-      desc: "A large encampment of unhoused residents in oversized vehicles (RVs). City offered a cash buyback program — 29 of 32 vehicle owners accepted. Resolved via this program over the course of 2025.",
-      source: "CBS San Francisco, 2025"
-    },
-    {
-      lat: 37.8700, lng: -122.2722,
-      name: "Civic Center Park (Allston & Milvia)",
-      date: "Apr 11, 2025",
-      status: "cleared",
-      desc: "Sixteen unhoused people moved into housing and remaining tents were removed on April 11, 2025. The west side of the park was fenced off following the clearance.",
-      source: "Berkeley Scanner, Apr 11, 2025"
-    },
-    {
-      lat: 37.8870, lng: -122.2983,
-      name: "Northwest Berkeley Industrial Zone (San Pablo / Gilman / Railroad)",
-      date: "Feb–Mar 2026",
-      status: "active",
-      desc: "In Feb 2026, the city posted closure notice for the area bounded by San Pablo Ave (E), Railroad tracks (W), Codornices Creek (N), and Gilman St (S) — encompassing numerous encampments. March 9, 2026 compliance deadline set.",
-      source: "Berkeley Scanner, Mar 3, 2026"
-    },
-    {
-      lat: 37.8770, lng: -122.2912,
-      name: "Unspecified N. Berkeley Site (Leptospirosis)",
-      date: "Feb 2026",
-      status: "active",
-      desc: "Berkeley ordered closure of an encampment in February 2026 citing leptospirosis (rat-borne disease) concerns — using public health justification as a basis for sweep. Location near north Berkeley.",
-      source: "Davis Vanguard, Feb 2026"
-    }
-  ];
-
-  document.addEventListener('DOMContentLoaded', function() {
-    // Custom icon
-    function makeIcon(status) {
-      const colors = { active: '#FFFFFF', cleared: '#AAAAAA', protest: '#888888' };
-      const fill = colors[status] || '#AAAAAA';
-      const innerFill = status === 'active' ? '#000' : '#333';
-      const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32">
-        <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 20 12 20S24 21 24 12C24 5.37 18.63 0 12 0z" fill="${fill}" stroke="#222" stroke-width="1"/>
-        <circle cx="12" cy="12" r="5" fill="${innerFill}"/>
-      </svg>`;
-      return L.divIcon({
-        html: svgStr,
-        iconSize: [24, 32], iconAnchor: [12, 32], popupAnchor: [0, -32],
-        className: ''
-      });
-    }
-
-    const map = L.map('sweep-map', {
-      center: [37.8715, -122.2840],
-      zoom: 13,
-      zoomControl: true
-    });
-
-    // CartoDB Dark Matter — free, no API key required
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter_all/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd',
-      maxZoom: 20,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-    }).addTo(map);
-
-    sweepSites.forEach(site => {
-      const icon = makeIcon(site.status);
-      const statusLabel = site.status === 'active'
-        ? '<span class="popup-tag active">Active / Disputed</span>'
-        : '<span class="popup-tag cleared">Cleared by City</span>';
-
-      const popupContent = `
-        <div class="popup-source">${site.source}</div>
-        <div class="popup-title">${site.name}</div>
-        <div class="popup-date">${site.date}</div>
-        <div class="popup-desc">${site.desc}</div>
-        ${statusLabel}
-      `;
-
-      L.marker([site.lat, site.lng], { icon })
-        .addTo(map)
-        .bindPopup(popupContent, { maxWidth: 280 });
-    });
-  });
   </script>
 </body>
 </html>
