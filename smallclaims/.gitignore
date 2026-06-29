@@ -1,0 +1,10 @@
+output/
+cases/*.json
+!cases/sample_case.json
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.DS_Store
+*.swp

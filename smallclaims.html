@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Berkeley Homeless Union — Small Claims Tool</title>
+  <meta name="description" content="Free tool to autofill California small claims court forms for Oakland encampment sweep property destruction cases." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,900;1,700&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --black: #080808;
+      --ink: #000000;
+      --dark: #111111;
+      --mid: #C8A900;
+      --light: #F9E873;
+      --rule: #2F2F2F;
+      --off: #101010;
+      --white: #F8E86D;
+      --accent: #FFC700;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--black);
+      color: var(--white);
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 1160px; margin: 0 auto; padding: 0 2rem; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+    #nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      background: var(--black);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      height: 60px;
+      display: flex; align-items: center;
+    }
+    #nav .container { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+    .nav-logo { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: var(--white); }
+    .nav-logo svg { width: 36px; height: 36px; flex-shrink: 0; }
+    .nav-logo-text { font-size: 0.8rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+    .nav-links { display: flex; align-items: center; gap: 2rem; list-style: none; }
+    .nav-links a { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(248,232,109,0.9); text-decoration: none; transition: color 0.2s; }
+    .nav-links a:hover, .nav-links a.active { color: var(--white); }
+    .nav-cta { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; background: var(--accent); color: var(--black); padding: 0.5rem 1.25rem; text-decoration: none; border: none; cursor: pointer; transition: opacity 0.2s; }
+    .nav-cta:hover { opacity: 0.8; }
+
+    section { padding: 6rem 0; }
+
+    /* Hero */
+    #hero {
+      padding-top: 140px;
+      padding-bottom: 6rem;
+      background: var(--off);
+      border-bottom: 1px solid var(--rule);
+    }
+    .hero-label { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.25em; text-transform: uppercase; color: var(--mid); display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .hero-label::before { content: ''; display: block; width: 32px; height: 1px; background: var(--mid); }
+    .hero-title { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(2.4rem, 5vw, 4.5rem); font-weight: 900; line-height: 1.05; letter-spacing: -0.02em; color: var(--white); max-width: 800px; margin-bottom: 1.5rem; }
+    .hero-sub { font-size: 1.1rem; line-height: 1.75; color: var(--mid); max-width: 600px; margin-bottom: 2.5rem; }
+    .hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+    .btn-primary { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; background: var(--accent); color: var(--black); padding: 0.9rem 2rem; text-decoration: none; transition: opacity 0.2s; }
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-ghost { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--white); border: 1px solid rgba(255,255,255,0.25); padding: 0.9rem 2rem; text-decoration: none; transition: border-color 0.2s, color 0.2s; }
+    .btn-ghost:hover { border-color: var(--white); }
+
+    /* How it works */
+    #how { background: var(--black); }
+    .section-label { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.25em; text-transform: uppercase; color: var(--mid); display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+    .section-title { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(2rem, 4vw, 3.2rem); font-weight: 900; line-height: 1.05; letter-spacing: -0.02em; color: var(--white); }
+    .section-intro { font-size: 1.05rem; line-height: 1.75; color: var(--mid); max-width: 580px; margin-top: 1.25rem; margin-bottom: 3.5rem; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--rule); }
+    .step { padding: 2rem 1.75rem; border-right: 1px solid var(--rule); }
+    .step:last-child { border-right: none; }
+    .step-num { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--mid); margin-bottom: 1rem; }
+    .step-title { font-size: 1rem; font-weight: 800; color: var(--white); margin-bottom: 0.6rem; line-height: 1.3; }
+    .step-text { font-size: 0.875rem; color: var(--mid); line-height: 1.65; }
+
+    /* Forms list */
+    #forms { background: var(--off); }
+    .forms-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; border: 1px solid var(--rule); margin-bottom: 3rem; }
+    .form-item { padding: 1.5rem; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); display: flex; gap: 1.25rem; align-items: flex-start; }
+    .form-item:nth-child(2n) { border-right: none; }
+    .form-item:nth-last-child(-n+2) { border-bottom: none; }
+    .form-code { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; background: var(--accent); color: var(--black); padding: 0.25rem 0.6rem; flex-shrink: 0; margin-top: 2px; }
+    .form-desc { font-size: 0.875rem; color: var(--mid); line-height: 1.55; }
+    .form-desc strong { display: block; font-weight: 700; color: var(--white); margin-bottom: 0.2rem; font-size: 0.9rem; }
+
+    /* Notice */
+    .notice { border: 1px solid var(--rule); padding: 1.5rem; display: flex; gap: 1rem; align-items: flex-start; margin-top: 3rem; }
+    .notice-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+    .notice-text { font-size: 0.85rem; color: var(--mid); line-height: 1.65; }
+    .notice-text strong { color: var(--white); }
+
+    /* Footer */
+    footer { background: var(--black); border-top: 1px solid var(--rule); padding: 4rem 0 2rem; }
+    .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 3rem; margin-bottom: 3rem; }
+    .footer-brand-name { font-family: 'Playfair Display', Georgia, serif; font-size: 1.2rem; font-weight: 900; color: var(--white); margin-bottom: 0.75rem; }
+    .footer-brand-sub { font-size: 0.78rem; color: var(--mid); line-height: 1.7; margin-bottom: 1.25rem; }
+    .footer-social { display: flex; gap: 0.75rem; }
+    .footer-social a { width: 34px; height: 34px; border: 1px solid #2A2A2A; display: flex; align-items: center; justify-content: center; color: #555; font-size: 0.7rem; font-weight: 800; text-decoration: none; letter-spacing: 0.05em; text-transform: uppercase; transition: border-color 0.2s, color 0.2s; }
+    .footer-social a:hover { border-color: var(--light); color: var(--light); }
+    .footer-col-label { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--rule); margin-bottom: 1rem; }
+    .footer-links { list-style: none; }
+    .footer-links li { margin-bottom: 0.5rem; }
+    .footer-links a { font-size: 0.85rem; color: var(--mid); text-decoration: none; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--light); }
+    .footer-bottom { border-top: 1px solid #1A1A1A; padding-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    .footer-copy { font-size: 0.75rem; color: var(--rule); }
+    .footer-tagline { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--rule); }
+
+    @media (max-width: 900px) { .steps { grid-template-columns: 1fr; } .step { border-right: none; border-bottom: 1px solid var(--rule); } .step:last-child { border-bottom: none; } .forms-grid { grid-template-columns: 1fr; } .form-item { border-right: none !important; } .form-item:nth-last-child(-n+2) { border-bottom: 1px solid var(--rule); } .form-item:last-child { border-bottom: none !important; } .footer-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 640px) { .nav-links { display: none; } .hero-actions { flex-direction: column; align-items: stretch; } .footer-grid { grid-template-columns: 1fr; gap: 2rem; } }
+  </style>
+</head>
+<body>
+
+  <nav id="nav">
+    <div class="container">
+      <a href="index.html" class="nav-logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="36" height="36" aria-label="BHU Logo"><defs><clipPath id="nc"><circle cx="250" cy="260" r="232"/></clipPath><path id="na" d="M 25,260 A 225,225 0 0,1 475,260"/></defs><circle cx="250" cy="260" r="245" fill="white"/><circle cx="250" cy="260" r="245" fill="none" stroke="black" stroke-width="7"/><circle cx="250" cy="260" r="232" fill="none" stroke="black" stroke-width="2"/><g clip-path="url(#nc)"><path d="M 195.5,252.3 L 37.1,230.1 A 215,215 0 0,1 49.3,183.0 L 198.7,240.3 A 55,55 0 0,0 195.5,252.3 Z" fill="black"/><path d="M 200.6,235.9 L 56.8,165.8 A 215,215 0 0,1 82.9,124.7 L 207.3,225.4 A 55,55 0 0,0 200.6,235.9 Z" fill="black"/><path d="M 210.4,221.8 L 95.3,110.6 A 215,215 0 0,1 132.9,79.7 L 220.0,213.9 A 55,55 0 0,0 210.4,221.8 Z" fill="black"/><path d="M 224.2,211.4 L 149.1,70.2 A 215,215 0 0,1 194.4,52.3 L 235.8,206.9 A 55,55 0 0,0 224.2,211.4 Z" fill="black"/><path d="M 240.4,205.8 L 212.7,48.3 A 215,215 0 0,1 261.3,45.3 L 252.9,205.1 A 55,55 0 0,0 240.4,205.8 Z" fill="black"/><path d="M 257.7,205.5 L 279.9,47.1 A 215,215 0 0,1 327.0,59.3 L 269.7,208.7 A 55,55 0 0,0 257.7,205.5 Z" fill="black"/><path d="M 274.1,210.6 L 344.2,66.8 A 215,215 0 0,1 385.3,92.9 L 284.6,217.3 A 55,55 0 0,0 274.1,210.6 Z" fill="black"/><path d="M 288.2,220.4 L 399.4,105.3 A 215,215 0 0,1 430.3,142.9 L 296.1,230.0 A 55,55 0 0,0 288.2,220.4 Z" fill="black"/><path d="M 298.6,234.2 L 439.8,159.1 A 215,215 0 0,1 457.7,204.4 L 303.1,245.8 A 55,55 0 0,0 298.6,234.2 Z" fill="black"/><rect x="15" y="257" width="470" height="8" fill="black"/><circle cx="250" cy="260" r="52" fill="white"/><path d="M 135,290 A 115,115 0 0,1 365,290" fill="none" stroke="black" stroke-width="20"/><path d="M 170,290 A 80,80 0 0,1 330,290" fill="none" stroke="black" stroke-width="20"/></g></svg>
+        <span class="nav-logo-text">Berkeley Homeless Union</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="map.html">Sweep Map</a></li>
+        <li><a href="court.html">Court Battle</a></li>
+        <li><a href="news.html">Press</a></li>
+        <li><a href="events.html">Events</a></li>
+        <li><a href="smallclaims.html" class="active">Small Claims</a></li>
+      </ul>
+      <a href="involved.html" class="nav-cta">Get Involved</a>
+    </div>
+  </nav>
+
+  <section id="hero">
+    <div class="container">
+      <p class="hero-label">Legal Tools</p>
+      <h1 class="hero-title">File a Small Claims Case Against the City</h1>
+      <p class="hero-sub">The City of Oakland destroyed your property during an encampment sweep. You can sue them in small claims court — for up to $10,000 — without a lawyer. This free tool fills out all the forms for you.</p>
+      <div class="hero-actions">
+        <!-- UPDATE THIS HREF after deploying the Streamlit app -->
+        <a href="https://bhu-smallclaims.streamlit.app" target="_blank" rel="noopener" class="btn-primary">Launch the Tool &rarr;</a>
+        <a href="court.html" class="btn-ghost">Our Federal Lawsuit &rarr;</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="container">
+      <p class="section-label">How It Works</p>
+      <h2 class="section-title">Three steps to filed forms</h2>
+      <p class="section-intro">No legal experience required. Enter your information once and download a complete, court-ready packet.</p>
+      <div class="steps">
+        <div class="step">
+          <p class="step-num">Step 01</p>
+          <h3 class="step-title">Enter your information</h3>
+          <p class="step-text">Use the manual entry form or upload your intake spreadsheet. The tool handles address parsing, date formatting, and auto-generates claim language from your sweep location and date.</p>
+        </div>
+        <div class="step">
+          <p class="step-num">Step 02</p>
+          <h3 class="step-title">Download your packet</h3>
+          <p class="step-text">The tool fills in SC-100 (complaint), FW-001 (fee waiver), FW-003 (fee waiver order), SC-112A (itemized property), and SC-150 (declaration) — all at once as a ZIP file.</p>
+        </div>
+        <div class="step">
+          <p class="step-num">Step 03</p>
+          <h3 class="step-title">File at the courthouse</h3>
+          <p class="step-text">Print and bring your packet to the Alameda County Superior Court, René C. Davidson Courthouse, 1225 Fallon St, Oakland. Request a fee waiver at the clerk's window when you file.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="forms">
+    <div class="container">
+      <p class="section-label">What Gets Generated</p>
+      <h2 class="section-title">Your complete court packet</h2>
+      <p class="section-intro">Five California Judicial Council forms, pre-filled and ready to print.</p>
+      <div class="forms-grid">
+        <div class="form-item">
+          <span class="form-code">SC-100</span>
+          <div class="form-desc">
+            <strong>Plaintiff's Claim and Order to Go to Small Claims Court</strong>
+            The main complaint form. Names the City of Oakland as defendant, states the amount claimed (up to $10,000), and describes the property destruction.
+          </div>
+        </div>
+        <div class="form-item">
+          <span class="form-code">FW-001</span>
+          <div class="form-desc">
+            <strong>Request to Waive Court Fees</strong>
+            Requests that the court waive filing fees. Most encampment residents qualify automatically based on income or public benefits receipt.
+          </div>
+        </div>
+        <div class="form-item">
+          <span class="form-code">SC-150</span>
+          <div class="form-desc">
+            <strong>Declaration</strong>
+            A signed, sworn statement in your own words describing what the City took and destroyed, and how it affected you.
+          </div>
+        </div>
+        <div class="form-item">
+          <span class="form-code">SC-112A</span>
+          <div class="form-desc">
+            <strong>Attachment — Itemized Property List</strong>
+            Lists each item of property destroyed with its estimated value. Use this to account for clothing, shelter gear, documents, tools, and other belongings.
+          </div>
+        </div>
+        <div class="form-item">
+          <span class="form-code">FW-003</span>
+          <div class="form-desc">
+            <strong>Order on Court Fee Waiver</strong>
+            Signed by the judge. Included in the packet so the clerk can process your fee waiver on the same day you file.
+          </div>
+        </div>
+        <div class="form-item">
+          <span class="form-code">Batch</span>
+          <div class="form-desc">
+            <strong>Bulk generation from a spreadsheet</strong>
+            Advocates can upload a spreadsheet of clients and generate complete form packets for all of them at once. Supports the Oakland intake sheet format directly.
+          </div>
+        </div>
+      </div>
+
+      <div class="notice">
+        <span class="notice-icon">&#9888;&#65039;</span>
+        <p class="notice-text"><strong>This tool fills forms — it does not provide legal advice.</strong> For questions about your specific case, contact Berkeley Homeless Union at <a href="mailto:berkeleyhomelessunion@gmail.com" style="color:var(--white);">berkeleyhomelessunion@gmail.com</a> or reach out to <a href="https://www.ebclc.org" target="_blank" rel="noopener" style="color:var(--white);">East Bay Community Law Center</a> for legal representation.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand-name">Berkeley Homeless Union</div>
+          <p class="footer-brand-sub">A membership union of people experiencing homelessness in Berkeley, CA — organizing for dignity, housing, and civil rights since 2024.</p>
+          <div class="footer-social">
+            <a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener">IG</a>
+            <a href="https://www.facebook.com/people/Berkeley-Homeless-Union/61565118432924/" target="_blank" rel="noopener">FB</a>
+            <a href="mailto:berkeleyhomelessunion@gmail.com">&#9993;</a>
+          </div>
+        </div>
+        <div>
+          <p class="footer-col-label">Navigate</p>
+          <ul class="footer-links">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="map.html">Sweep Map</a></li>
+            <li><a href="court.html">Court Battle</a></li>
+            <li><a href="news.html">Press</a></li>
+            <li><a href="events.html">Events</a></li>
+            <li><a href="smallclaims.html">Small Claims</a></li>
+            <li><a href="involved.html">Get Involved</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="footer-col-label">Legal</p>
+          <ul class="footer-links">
+            <li><a href="https://cand.uscourts.gov/cases-e-filing/cases/325-cv-01414-emc/berkeley-homeless-union-et-al-v-city-berkeley-et-al" target="_blank" rel="noopener">Court Docket</a></li>
+            <li><a href="https://localnewsmatters.org/2025/02/13/homeless-advocacy-group-sues-berkeley-to-prevent-city-from-sweeping-encampments/" target="_blank" rel="noopener">Lawsuit Coverage</a></li>
+            <li><a href="https://sfist.com/2025/06/12/federal-judge-says-berkeley-can-sweep-large-homeless-encampment-but-that-people-with-disabilities-can-stay/" target="_blank" rel="noopener">Latest Ruling</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="footer-col-label">Contact</p>
+          <ul class="footer-links">
+            <li><a href="mailto:berkeleyhomelessunion@gmail.com">berkeleyhomelessunion@gmail.com</a></li>
+            <li><a href="#">Berkeley, California</a></li>
+            <li style="margin-top:1rem;"><a href="https://www.instagram.com/berkeley.homeless.union/" target="_blank" rel="noopener">@berkeley.homeless.union</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span class="footer-copy">&copy; 2026 Berkeley Homeless Union &middot; berkeleyhomelessunion.org</span>
+        <span class="footer-tagline">Landless &middot; Not &middot; Voiceless</span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
