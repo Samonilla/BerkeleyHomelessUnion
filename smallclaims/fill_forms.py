@@ -16,7 +16,7 @@ import re
 import argparse
 from pathlib import Path
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import NameObject
+from pypdf.generic import NameObject, BooleanObject, DictionaryObject
 
 
 # ─────────────────────────────────────────────────────────────
@@ -108,6 +108,21 @@ def _write_pdf(template_path, output_path, values):
 
     for page in writer.pages:
         writer.update_page_form_field_values(page, values)
+
+    # Ensure PDF viewers render the updated field values by setting
+    # the AcroForm /NeedAppearances flag. Some viewers require this
+    # to generate appearance streams for filled fields when the PDF
+    # is opened or saved elsewhere.
+    try:
+        root = writer._root_object
+        if "\/AcroForm" in root:
+            acro = root[NameObject("/AcroForm")]
+            acro.update({NameObject("/NeedAppearances"): BooleanObject(True)})
+        else:
+            root.update({NameObject("/AcroForm"): DictionaryObject({NameObject("/NeedAppearances"): BooleanObject(True)})})
+    except Exception:
+        # Non-fatal: continue writing even if we can't set the flag
+        pass
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "wb") as f:
