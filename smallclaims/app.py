@@ -71,38 +71,86 @@ def _generate_pdfs(case: dict) -> dict:
     return result
 
 
-def _make_zip(pdfs: dict, slug: str) -> bytes:
+def _make_zip(pdfs: dict, slug: str, flatten: bool = False) -> bytes:
+    """Create a ZIP of the provided PDF bytes.
+
+    By default (`flatten=False`) the function packages the exact in-memory
+    PDF bytes (so the ZIP matches the individual PDF downloads shown in-UI).
+    If `flatten=True` the function will try to rasterize + sanitize PDFs for
+    maximum viewer compatibility.
+    """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for label, data in pdfs.items():
-            # Try to rasterize/flatten PDF bytes so appearances are baked in for
-            # viewers that ignore /NeedAppearances. If PyMuPDF isn't available,
-            # fall back to the original bytes.
-            try:
-                import fitz
-                # Open original bytes, render each page to an image-PDF, then
-                # combine pages into a new PDF bytes object.
-                doc = fitz.open(stream=data, filetype="pdf")
-                new = fitz.open()
-                mat = fitz.Matrix(2.0, 2.0)
-                for page in doc:
-                    pix = page.get_pixmap(matrix=mat)
-                    img_pdf = fitz.open("pdf", pix.tobytes("pdf"))
-                    new.insert_pdf(img_pdf)
+            out_bytes = data
+
+            if flatten:
+                # Try to rasterize/flatten PDF bytes so appearances are baked in for
+                # viewers that ignore /NeedAppearances. If PyMuPDF isn't available,
+                # fall back to the original bytes.
                 try:
-                    out_bytes = new.write()
+                    import fitz
+                    # Open original bytes, render each page to an image-PDF, then
+                    # combine pages into a new PDF bytes object.
+                    doc = fitz.open(stream=data, filetype="pdf")
+                    new = fitz.open()
+                    mat = fitz.Matrix(2.0, 2.0)
+                    for page in doc:
+                        pix = page.get_pixmap(matrix=mat)
+                        img_pdf = fitz.open("pdf", pix.tobytes("pdf"))
+                        new.insert_pdf(img_pdf)
+                    try:
+                        out_bytes = new.write()
+                    except Exception:
+                        # Fallback: save to temp file then read
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpf:
+                            new.save(tmpf.name)
+                            tmpname = tmpf.name
+                        with open(tmpname, "rb") as tf:
+                            out_bytes = tf.read()
+                        os.unlink(tmpname)
+                    new.close()
+                    doc.close()
                 except Exception:
-                    # Fallback: save to temp file then read
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpf:
-                        new.save(tmpf.name)
-                        tmpname = tmpf.name
-                    with open(tmpname, "rb") as tf:
-                        out_bytes = tf.read()
-                    os.unlink(tmpname)
-                new.close()
-                doc.close()
-            except Exception:
-                out_bytes = data
+                    out_bytes = data
+
+                # Post-process to remove any remaining AcroForm and page /Annots
+                # so ZIPs contain image-only PDFs that render reliably in viewers.
+                try:
+                    from pypdf import PdfReader, PdfWriter
+                    from pypdf.generic import NameObject
+                    rdr = PdfReader(io.BytesIO(out_bytes))
+                    w = PdfWriter()
+                    w.append(rdr)
+
+                    # Remove page annotations
+                    for p in w.pages:
+                        try:
+                            if '/Annots' in p:
+                                p.pop('/Annots', None)
+                        except Exception:
+                            pass
+
+                    # Remove AcroForm from root if present
+                    try:
+                        root = w._root_object
+                        if NameObject('/AcroForm') in root:
+                            try:
+                                del root[NameObject('/AcroForm')]
+                            except Exception:
+                                try:
+                                    root.pop(NameObject('/AcroForm'), None)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
+                    bio = io.BytesIO()
+                    w.write(bio)
+                    out_bytes = bio.getvalue()
+                except Exception:
+                    # If post-processing fails, keep the original bytes
+                    pass
 
             zf.writestr(f"{slug}_{label.lower().replace('-', '')}.pdf", out_bytes)
     return buf.getvalue()
@@ -113,12 +161,22 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
     st.success(f"{prefix}Generated {len(pdfs)} forms.")
     st.download_button(
         "⬇️  Download All Forms (ZIP)",
-        data=_make_zip(pdfs, slug),
+        data=_make_zip(pdfs, slug, flatten=False),
         file_name=f"{slug}_forms.zip",
         mime="application/zip",
         type="primary",
         width="stretch",
         key=f"zip_{slug}",
+    )
+    # Optional: flattened ZIP for viewers that ignore form appearances
+    st.download_button(
+        "⬇️  Download All Forms (ZIP, flattened for compatibility)",
+        data=_make_zip(pdfs, slug, flatten=True),
+        file_name=f"{slug}_forms_flattened.zip",
+        mime="application/zip",
+        type="secondary",
+        width="stretch",
+        key=f"zip_flat_{slug}",
     )
     cols = st.columns(len(pdfs))
     for col, (lbl, data) in zip(cols, pdfs.items()):
