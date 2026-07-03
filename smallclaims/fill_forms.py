@@ -556,9 +556,6 @@ def fill_sc112a(case, template_path, output_path):
         "SC-112A[0].Page1[0].List1[0].Item1[0].FillText07[0]": _item_desc(3),
         "SC-112A[0].Page1[0].List1[0].Item1[0].FillText08[0]": _item_desc(4),
 
-        # Narrative
-        "SC-112A[0].Page1[0].List3[0].Lic[0].FillText12[0]": claim.get("damages_calculation", ""),
-
         # Signature
         "SC-112A[0].Page1[0].Sign[0].FillText14[0]": filing.get("filing_date", ""),
         "SC-112A[0].Page1[0].Sign[0].FillText16[0]": p["name"],

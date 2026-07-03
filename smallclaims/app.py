@@ -492,7 +492,7 @@ _TEMPLATE_COLS = [
     ("plaintiff_zip",           "ZIP code",                                       False, "94609"),
     ("plaintiff_phone",         "Phone number",                                   False, "510-555-0100"),
     ("plaintiff_email",         "Email",                                          False, ""),
-    ("damages_calculation",     "Itemized damages breakdown",                     False, "Clothing $500..."),
+    ("damages_calculation",     "How damages were calculated (SC-100)",         False, "Clothing $500..."),
     ("income_source_1",         "Primary income source",                          False, "General Assistance"),
     ("income_amount_1",         "Primary income amount $",                         False, "400"),
     ("expense_food",            "Monthly food/supplies $",                         False, "200"),
