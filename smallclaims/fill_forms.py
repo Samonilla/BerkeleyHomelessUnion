@@ -18,6 +18,36 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import NameObject, BooleanObject, DictionaryObject
 
+# Optional: flatten PDFs to ensure appearances are rendered in all viewers.
+def _flatten_pdf(path: str, scale: float = 2.0) -> None:
+    """Rasterize each page and re-save as a PDF to bake in appearances.
+
+    This uses PyMuPDF (package name `pymupdf`). It preserves visual fidelity
+    at the cost of producing a rasterized PDF (larger file, not editable).
+    If PyMuPDF is not available, this is a no-op.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except Exception:
+        return
+
+    try:
+        doc = fitz.open(path)
+        new = fitz.open()
+        mat = fitz.Matrix(scale, scale)
+        for page in doc:
+            pix = page.get_pixmap(matrix=mat)
+            img_pdf = fitz.open("pdf", pix.tobytes("pdf"))
+            new.insert_pdf(img_pdf)
+        tmp = path + ".flattmp"
+        new.save(tmp)
+        new.close()
+        doc.close()
+        os.replace(tmp, path)
+    except Exception:
+        # Non-fatal: if flattening fails, leave original PDF as-is
+        return
+
 
 # ─────────────────────────────────────────────────────────────
 # CONSTANTS — Oakland-specific defaults shared across all cases
@@ -135,6 +165,13 @@ def _write_pdf(template_path, output_path, values):
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "wb") as f:
         writer.write(f)
+
+    # Try to flatten the PDF so appearances are visually baked in for all viewers.
+    # Flattening is optional and will be skipped if PyMuPDF (`pymupdf`) isn't installed.
+    try:
+        _flatten_pdf(output_path)
+    except Exception:
+        pass
 
 
 def _case_name(case):
@@ -255,6 +292,10 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
     }
 
     _write_pdf(template_path, output_path, values)
+    try:
+        _flatten_using_field_meta(output_path, field_meta_path)
+    except Exception:
+        pass
     print(f"  ✓ SC-100  → {output_path}")
 
 
@@ -344,6 +385,10 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
     }
 
     _write_pdf(template_path, output_path, values)
+    try:
+        _flatten_using_field_meta(output_path, field_meta_path)
+    except Exception:
+        pass
     print(f"  ✓ FW-001  → {output_path}")
 
 
