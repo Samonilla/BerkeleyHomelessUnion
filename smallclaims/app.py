@@ -656,12 +656,21 @@ with tab_manual:
             claim_amount = st.text_input("Claim Amount ($) *", placeholder="10000")
 
         claim_reason = st.text_area(
-            "What Happened *  (used on SC-100 and SC-150)",
+            "Brief summary, used on SC-100",
             placeholder=(
                 "On [date], the City of Oakland DPW conducted an encampment sweep "
                 "at [location] and destroyed Plaintiff's personal property…"
             ),
             height=120,
+        )
+        declaration_detail = st.text_area(
+            "Declaration — describe in detail, in first person, what happened",
+            placeholder=(
+                "I am the plaintiff in this action. On [date], the City of Oakland DPW "
+                "conducted an encampment sweep at [location] and destroyed my personal property. "
+                "I was present and saw the officers…"
+            ),
+            height=160,
         )
         damages_calc = st.text_area(
             "How Damages Are Calculated",
@@ -721,18 +730,6 @@ with tab_manual:
             exp_housing   = st.text_input("Housing ($)", value="0")
             total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300")
 
-        # ── Declaration ────────────────────────────────────────────────────
-        st.divider()
-        st.subheader("Declaration (SC-150)")
-        st.caption("Leave blank to use the incident description above.")
-        declaration = st.text_area(
-            "First-person statement (under penalty of perjury)",
-            placeholder=(
-                "I am the plaintiff in this action. On [date], the City of Oakland DPW…"
-            ),
-            height=120,
-        )
-
         submitted = st.form_submit_button(
             "Generate Forms", type="primary", width="stretch"
         )
@@ -788,7 +785,7 @@ with tab_manual:
             },
             "declaration": {
                 "declarant_name": name.strip(),
-                "content":        declaration.strip() or claim_reason.strip(),
+                "content":        declaration_detail.strip() or claim_reason.strip(),
             },
             "subpoena": {
                 "case_caption":     "",
