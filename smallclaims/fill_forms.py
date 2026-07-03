@@ -115,11 +115,19 @@ def _write_pdf(template_path, output_path, values):
     # is opened or saved elsewhere.
     try:
         root = writer._root_object
-        if "\/AcroForm" in root:
-            acro = root[NameObject("/AcroForm")]
-            acro.update({NameObject("/NeedAppearances"): BooleanObject(True)})
-        else:
+        # Set the AcroForm /NeedAppearances flag so PDF viewers render filled fields
+        try:
+            acro = root.get(NameObject("/AcroForm")) if hasattr(root, 'get') else root[NameObject("/AcroForm")] if NameObject("/AcroForm") in root else None
+        except Exception:
+            acro = None
+
+        if acro is None:
             root.update({NameObject("/AcroForm"): DictionaryObject({NameObject("/NeedAppearances"): BooleanObject(True)})})
+        else:
+            try:
+                acro.update({NameObject("/NeedAppearances"): BooleanObject(True)})
+            except Exception:
+                root.update({NameObject("/AcroForm"): DictionaryObject({NameObject("/NeedAppearances"): BooleanObject(True)})})
     except Exception:
         # Non-fatal: continue writing even if we can't set the flag
         pass
