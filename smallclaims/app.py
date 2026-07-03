@@ -23,9 +23,9 @@ sys.path.insert(0, str(HERE))
 
 from fill_forms import (
     fill_sc100, fill_fw001, fill_fw003, fill_sc112a, fill_sc150,
-    fill_sc105, fill_sc107, validate_case, DEFENDANT_DEFAULTS,
+    fill_sc105, fill_sc107, fill_sc100a_for_party, validate_case, DEFENDANT_DEFAULTS,
 )
-from smallclaims.fill_forms import fill_sc100a_for_party
+from courts import ALL_COUNTIES, courthouses_for_county, court_info_string
 
 _META_SC100 = str(HERE / "field_meta" / "sc100_fields.json")
 _META_FW001 = str(HERE / "field_meta" / "fw001_fields.json")
@@ -344,6 +344,7 @@ def intake_row_to_case(row: pd.Series, defaults: dict) -> dict:
     phone = re.split(r"[;,/]", phone_raw)[0].strip()
 
     return {
+        "court": defaults.get("court", {}),
         "plaintiff": {
             "name":   g("Name"),
             "street": addr["street"],
@@ -561,16 +562,47 @@ def _sc107_csv_template_bytes() -> bytes:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="Oakland Small Claims Autofiller",
+    page_title="CA Small Claims Autofiller",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("Oakland Encampment — Small Claims Autofiller")
+st.title("California Encampment — Small Claims Autofiller")
 st.caption(
     "Generates SC-100, FW-001, FW-003, SC-112A, and SC-150 "
-    "for City of Oakland encampment property destruction cases."
+    "for encampment property destruction cases in any California county."
 )
+
+
+# ─── Court selector widget (reused in both tabs) ─────────────────────────────
+
+def _court_selector(key_prefix: str, default_county: str = "Alameda") -> dict:
+    """Render county + courthouse dropdowns. Returns a court dict for case["court"]."""
+    col_county, col_house = st.columns([1, 2])
+    with col_county:
+        county = st.selectbox(
+            "County *",
+            ALL_COUNTIES,
+            index=ALL_COUNTIES.index(default_county) if default_county in ALL_COUNTIES else 0,
+            key=f"{key_prefix}_county",
+        )
+    houses = courthouses_for_county(county)
+    house_labels = [f"{h['city']} — {h['name']}" for h in houses]
+    with col_house:
+        house_idx = st.selectbox(
+            "Courthouse *",
+            range(len(house_labels)),
+            format_func=lambda i: house_labels[i],
+            key=f"{key_prefix}_house",
+        )
+    chosen = houses[house_idx]
+    return {
+        "county":  county,
+        "name":    chosen["name"],
+        "address": chosen["address"],
+        "city":    chosen["city"],
+        "zip":     chosen["zip"],
+    }
 
 tab_manual, tab_sheet = st.tabs(["📝 Manual Entry", "📊 Spreadsheet Import"])
 
@@ -580,6 +612,15 @@ tab_manual, tab_sheet = st.tabs(["📝 Manual Entry", "📊 Spreadsheet Import"]
 # ══════════════════════════════════════════════════════
 
 with tab_manual:
+    # Court selector lives outside the form so county → courthouse cascade works
+    st.subheader("Filing Court")
+    manual_court = _court_selector("manual")
+    st.caption(
+        f"Court: **Superior Court of California, County of {manual_court['county']}** · "
+        f"{manual_court['address']}, {manual_court['city']}, CA {manual_court['zip']}"
+    )
+    st.divider()
+
     with st.form("manual_form", border=False):
 
         # ── Plaintiff ──────────────────────────────────────────────────────
@@ -706,6 +747,7 @@ with tab_manual:
         basis_code = fw_basis.split(" — ")[0].strip()
 
         case = {
+            "court": manual_court,
             "plaintiff": {
                 "name":   name.strip(),
                 "street": street.strip(),
@@ -897,6 +939,13 @@ with tab_sheet:
             "They fill in the fields not captured in the Oakland intake sheet."
         )
 
+        st.markdown("**Filing Court**")
+        batch_court = _court_selector("batch")
+        st.caption(
+            f"Court: **Superior Court of California, County of {batch_court['county']}** · "
+            f"{batch_court['address']}, {batch_court['city']}, CA {batch_court['zip']}"
+        )
+
         with st.form("batch_defaults_form", border=True):
             d1, d2 = st.columns(2)
             with d1:
@@ -953,6 +1002,7 @@ with tab_sheet:
 
         if run_batch:
             defaults = {
+                "court":                 batch_court,
                 "filing_date":           b_filing_date.strip(),
                 "govt_claim_filed_date": b_govt_claim_date.strip(),
                 "claim_amount":          b_claim_amount.strip(),

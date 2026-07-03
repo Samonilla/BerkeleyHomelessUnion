@@ -77,14 +77,33 @@ def _flatten_pdf(path: str, scale: float = 2.0) -> None:
 
 
 # ─────────────────────────────────────────────────────────────
-# CONSTANTS — Oakland-specific defaults shared across all cases
+# COURT INFO — dynamic, reads from case["court"]
 # ─────────────────────────────────────────────────────────────
 
-COURT_INFO = (
-    "Superior Court of California, County of Alameda\n"
-    "1225 Fallon Street\n"
-    "Oakland, CA 94612"
-)
+_DEFAULT_COURT = {
+    "county":  "Alameda",
+    "address": "1225 Fallon Street",
+    "city":    "Oakland",
+    "zip":     "94612",
+}
+
+
+def _court_info(case: dict) -> str:
+    ct = case.get("court", _DEFAULT_COURT)
+    county  = ct.get("county",  _DEFAULT_COURT["county"])
+    address = ct.get("address", _DEFAULT_COURT["address"])
+    city    = ct.get("city",    _DEFAULT_COURT["city"])
+    zip_    = ct.get("zip",     _DEFAULT_COURT["zip"])
+    return (
+        f"Superior Court of California, County of {county}\n"
+        f"{address}\n"
+        f"{city}, CA {zip_}"
+    )
+
+
+def _venue_zip(case: dict) -> str:
+    return case.get("court", _DEFAULT_COURT).get("zip", _DEFAULT_COURT["zip"])
+
 
 DEFENDANT_DEFAULTS = {
     "city_of_oakland": {
@@ -102,7 +121,6 @@ DEFENDANT_DEFAULTS = {
     }
 }
 
-VENUE_ZIP = "94612"  # Alameda County Superior Court
 
 
 # ─────────────────────────────────────────────────────────────
@@ -224,7 +242,7 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
 
     values = {
         # Header
-        "SC-100[0].Page1[0].CaptionRight[0].County[0].CourtInfo[0]": COURT_INFO,
+        "SC-100[0].Page1[0].CaptionRight[0].County[0].CourtInfo[0]": _court_info(case),
 
         # Plaintiff
         "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffName1[0]":    p["name"],
@@ -273,7 +291,7 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
         "SC-100[0].Page3[0].List5[0].Lib[0].Checkbox5cb[0]": cb(
             "SC-100[0].Page3[0].List5[0].Lib[0].Checkbox5cb[0]", True
         ),
-        "SC-100[0].Page3[0].List6[0].item6[0].ZipCode1[0]": VENUE_ZIP,
+        "SC-100[0].Page3[0].List6[0].item6[0].ZipCode1[0]": _venue_zip(case),
 
         # Attorney-client fee dispute? No
         "SC-100[0].Page3[0].List7[0].item7[0].Checkbox60[0]": cb(
@@ -345,7 +363,7 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
 
     values = {
         # Header
-        "FW-001[0].Page1[0].RightCaption[0].CourtInfo[0]": COURT_INFO,
+        "FW-001[0].Page1[0].RightCaption[0].CourtInfo[0]": _court_info(case),
         "FW-001[0].Page1[0].RightCaption[0].CaseName[0]":  _case_name(case),
 
         # Section 1: Petitioner info
@@ -427,7 +445,7 @@ def fill_fw003(case, template_path, output_path):
     p = case["plaintiff"]
 
     values = {
-        "FW-003[0].Page1[0].Stamp_court_case[0].CourtInfo_ft[0]":  COURT_INFO,
+        "FW-003[0].Page1[0].Stamp_court_case[0].CourtInfo_ft[0]":  _court_info(case),
         "FW-003[0].Page1[0].Stamp_court_case[0].CaseNumber_ft[0]": case.get("case_number", ""),
         "FW-003[0].Page1[0].Stamp_court_case[0].CaseName_ft[0]":   _case_name(case),
         "FW-003[0].Page1[0].PersonWaivingName_ft[0]":              p["name"],
@@ -451,7 +469,7 @@ def fill_sc105(case, template_path, output_path):
 
     values = {
         # Page 1 caption
-        "SC-105[0].Page1[0].RightCaption[0].CourtInfo[0]":  COURT_INFO,
+        "SC-105[0].Page1[0].RightCaption[0].CourtInfo[0]":  _court_info(case),
         "SC-105[0].Page1[0].RightCaption[0].CaseNumber[0]": case.get("case_number", ""),
         "SC-105[0].Page1[0].RightCaption[0].CaseName[0]":   cn,
 
@@ -464,7 +482,7 @@ def fill_sc105(case, template_path, output_path):
         "SC-105[0].Page1[0].Sign[0].SigName[0]":  svc.get("server_name", p["name"]),
 
         # Page 2 caption + party names
-        "SC-105[0].Page2[0].RightCaption[0].CourtInfo[0]":          COURT_INFO,
+        "SC-105[0].Page2[0].RightCaption[0].CourtInfo[0]":          _court_info(case),
         "SC-105[0].Page2[0].RightCaption[0].CaseNumber[0]":         case.get("case_number", ""),
         "SC-105[0].Page2[0].RightCaption[0].CaseName[0]":           cn,
         "SC-105[0].Page2[0].List7[0].Item7[0].FullName10[0]":       p["name"],
@@ -485,7 +503,7 @@ def fill_sc109(case, template_path, output_path):
 
     values = {
         # Caption
-        "SC-109[0].Page1[0].Right_Caption[0].County[0].CourtInfo[0]": COURT_INFO,
+        "SC-109[0].Page1[0].Right_Caption[0].County[0].CourtInfo[0]": _court_info(case),
         "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseNumber[0]":    case.get("case_number", ""),
         "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseName[0]":      cn,
 
@@ -566,7 +584,7 @@ def fill_sc150(case, template_path, output_path):
 
     values = {
         # Caption
-        "SC-150[0].Page1[0].Caption_sf[0].supcourt[0].CourtInfo[0]":              COURT_INFO,
+        "SC-150[0].Page1[0].Caption_sf[0].supcourt[0].CourtInfo[0]":              _court_info(case),
         "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseNumber[0]":       case.get("case_number", ""),
         "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseName[0]":         cn,
 
