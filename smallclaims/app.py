@@ -23,7 +23,7 @@ sys.path.insert(0, str(HERE))
 
 from fill_forms import (
     fill_sc100, fill_fw001, fill_fw003, fill_sc112a, fill_sc150,
-    fill_sc105, validate_case, DEFENDANT_DEFAULTS,
+    fill_sc105, fill_sc107, validate_case, DEFENDANT_DEFAULTS,
 )
 
 _META_SC100 = str(HERE / "field_meta" / "sc100_fields.json")
@@ -66,8 +66,21 @@ def _generate_pdfs(case: dict) -> dict:
             fill_sc112a(case, str(_TPL/"sc112a.pdf"), str(tmp/"sc112a.pdf"))
             result["SC-112A"] = (tmp/"sc112a.pdf").read_bytes()
 
-            fill_sc150(case, str(_TPL/"sc150.pdf"), str(tmp/"sc150.pdf"))
-            result["SC-150"] = (tmp/"sc150.pdf").read_bytes()
+            # SC-150 form generation
+            try:
+                fill_sc150(case, str(_TPL/"sc150.pdf"), str(tmp/"sc150.pdf"))
+                result["SC-150"] = (tmp/"sc150.pdf").read_bytes()
+            except Exception:
+                # Handle SC-150 generation failure
+                pass
+
+            # SC-107 subpoena (if subpoena info present)
+            try:
+                fill_sc107(case, str(_TPL/"sc107.pdf"), str(tmp/"sc107.pdf"))
+                result["SC-107"] = (tmp/"sc107.pdf").read_bytes()
+            except Exception:
+                # Non-fatal: continue generating other forms even if SC-107 fails
+                pass
     return result
 
 
@@ -430,6 +443,24 @@ def template_row_to_case(row: pd.Series) -> dict:
             "declarant_name": s("plaintiff_name"),
             "content":        s("declaration_content") or reason,
         },
+        "subpoena": {
+            "case_caption":          s("subpoena_case_caption"),
+            "to":                    s("subpoena_to"),
+            "custodian":             s("subpoena_custodian"),
+            "service_location":      s("subpoena_service_location"),
+            "requests": [
+                s("subpoena_request_1"),
+                s("subpoena_request_2"),
+                s("subpoena_request_3"),
+                s("subpoena_request_4"),
+                s("subpoena_request_5"),
+                s("subpoena_request_6"),
+                s("subpoena_request_7"),
+                s("subpoena_request_8"),
+                s("subpoena_request_9"),
+                s("subpoena_request_10"),
+            ],
+        },
     }
 
 
@@ -460,6 +491,22 @@ _TEMPLATE_COLS = [
     ("receives_medi_cal",       "Receives Medi-Cal? TRUE/FALSE",                  False, "TRUE"),
     ("fee_waiver_basis",        "Fee waiver basis: 5a 5b or 5c",                  False, "5c"),
     ("declaration_content",     "First-person declaration (optional)",            False, ""),
+
+    # SC-107 subpoena helper fields
+    ("subpoena_case_caption",   "SC-107 subpoena case caption",                   False, "Jane Doe v. City of Oakland"),
+    ("subpoena_to",             "Subpoena recipient / agency",                    False, "Oakland Police Department"),
+    ("subpoena_custodian",      "Custodian of records",                            False, "Records Division"),
+    ("subpoena_service_location","Service address for subpoena",                   False, "1515 Clay St, Oakland CA"),
+    ("subpoena_request_1",      "SC-107 request item 1",                          False, "All body-worn camera and officer dashboard footage from the sweep."),
+    ("subpoena_request_2",      "SC-107 request item 2",                          False, "All police incident reports, notes, and supplemental reports related to the sweep."),
+    ("subpoena_request_3",      "SC-107 request item 3",                          False, "All dispatch logs, radio transmissions, and 911/311 call recordings for the incident."),
+    ("subpoena_request_4",      "SC-107 request item 4",                          False, "All complaints, investigations, and disciplinary records for involved officers."),
+    ("subpoena_request_5",      "SC-107 request item 5",                          False, "All internal communications, emails, memos, and directives regarding encampment sweeps."),
+    ("subpoena_request_6",      "SC-107 request item 6",                          False, "All policies, training materials, use-of-force guidelines, and homeless encampment protocols."),
+    ("subpoena_request_7",      "SC-107 request item 7",                          False, "All property seizure, storage, chain-of-custody, and disposal records."),
+    ("subpoena_request_8",      "SC-107 request item 8",                          False, "All surveillance camera and private video footage from the sweep location."),
+    ("subpoena_request_9",      "SC-107 request item 9",                          False, "All records of coordination between police, DPW, and other City agencies."),
+    ("subpoena_request_10",     "SC-107 request item 10",                         False, "All logs, schedules, and written directives authorizing the sweeps."),
     ("item_1_desc",             "Property item 1 description",                    False, "Tent and sleeping bag"),
     ("item_1_value",            "Property item 1 value $",                         False, "350"),
     ("item_2_desc",             "Property item 2 description",                    False, "Clothing"),
@@ -469,6 +516,31 @@ _TEMPLATE_COLS = [
 
 def _csv_template_bytes() -> bytes:
     row = {c[0]: c[3] for c in _TEMPLATE_COLS}
+    buf = io.StringIO()
+    pd.DataFrame([row]).to_csv(buf, index=False)
+    return buf.getvalue().encode()
+
+
+_SC107_TEMPLATE_COLS = [
+    ("subpoena_case_caption",    "SC-107 subpoena case caption",                   False, "Jane Doe v. City of Oakland"),
+    ("subpoena_to",              "Subpoena recipient / agency",                    False, "Oakland Police Department"),
+    ("subpoena_custodian",       "Custodian of records",                            False, "Records Division"),
+    ("subpoena_service_location","Service address for subpoena",                   False, "1515 Clay St, Oakland CA"),
+    ("subpoena_request_1",       "SC-107 request item 1",                          False, "All body-worn camera and officer dashboard footage from the sweep."),
+    ("subpoena_request_2",       "SC-107 request item 2",                          False, "All police incident reports, notes, and supplemental reports related to the sweep."),
+    ("subpoena_request_3",       "SC-107 request item 3",                          False, "All dispatch logs, radio transmissions, and 911/311 call recordings for the incident."),
+    ("subpoena_request_4",       "SC-107 request item 4",                          False, "All complaints, investigations, and disciplinary records for involved officers."),
+    ("subpoena_request_5",       "SC-107 request item 5",                          False, "All internal communications, emails, memos, and directives regarding encampment sweeps."),
+    ("subpoena_request_6",       "SC-107 request item 6",                          False, "All policies, training materials, use-of-force guidelines, and homeless encampment protocols."),
+    ("subpoena_request_7",       "SC-107 request item 7",                          False, "All property seizure, storage, chain-of-custody, and disposal records."),
+    ("subpoena_request_8",       "SC-107 request item 8",                          False, "All surveillance camera and private video footage from the sweep location."),
+    ("subpoena_request_9",       "SC-107 request item 9",                          False, "All records of coordination between police, DPW, and other City agencies."),
+    ("subpoena_request_10",      "SC-107 request item 10",                         False, "All logs, schedules, and written directives authorizing the sweeps."),
+]
+
+
+def _sc107_csv_template_bytes() -> bytes:
+    row = {c[0]: c[3] for c in _SC107_TEMPLATE_COLS}
     buf = io.StringIO()
     pd.DataFrame([row]).to_csv(buf, index=False)
     return buf.getvalue().encode()
@@ -656,6 +728,13 @@ with tab_manual:
                 "declarant_name": name.strip(),
                 "content":        declaration.strip() or claim_reason.strip(),
             },
+            "subpoena": {
+                "case_caption":     "",
+                "to":               "",
+                "custodian":        "",
+                "service_location": "",
+                "requests":         ["", "", "", "", "", "", "", "", "", ""],
+            },
         }
 
         try:
@@ -706,6 +785,25 @@ with tab_sheet:
             columns=["Column", "Required", "Description", "Example"],
         )
         st.dataframe(col_df, use_container_width=True, hide_index=True)
+
+    with st.expander("SC-107 subpoena checklist and spreadsheet fields"):
+        subpoena_df = pd.DataFrame([
+            ["subpoena_case_caption",   "Case caption for SC-107 subpoena"],
+            ["subpoena_to",             "Subpoena recipient or agency to which records are directed"],
+            ["subpoena_custodian",      "Custodian of records responsible for producing documents"],
+            ["subpoena_service_location","Service address where the subpoena may be delivered"],
+            ["subpoena_request_1",      "Body-worn camera and officer dashboard footage from the sweep"],
+            ["subpoena_request_2",      "Incident reports, notes, and supplemental reports related to the sweep"],
+            ["subpoena_request_3",      "Dispatch logs, radio transmissions, and 911/311 recordings"],
+            ["subpoena_request_4",      "Officer complaint, investigation, and disciplinary records"],
+            ["subpoena_request_5",      "Internal communications, emails, memos, and directives about encampment sweeps"],
+            ["subpoena_request_6",      "Policies, training materials, use-of-force guidelines, and encampment protocols"],
+            ["subpoena_request_7",      "Property seizure, storage, chain-of-custody, and disposal records"],
+            ["subpoena_request_8",      "Surveillance camera and private video footage from the sweep location"],
+            ["subpoena_request_9",      "Records of coordination between police, DPW, and other agencies"],
+            ["subpoena_request_10",     "Logs, schedules, and written directives authorizing the sweeps"],
+        ], columns=["Spreadsheet Column", "Request description"])
+        st.dataframe(subpoena_df, use_container_width=True, hide_index=True)
 
     # ── Upload ─────────────────────────────────────────────────────────────
     uploaded = st.file_uploader(
@@ -926,3 +1024,39 @@ with tab_sheet:
                 for pname, _, err in fail:
                     with st.expander(f"Error — {pname}"):
                         st.text(err)
+
+with tab_sc107:
+    st.subheader("SC-107 Subpoena Helper")
+    st.markdown(
+        "Use this section to generate SC-107 subpoena request language and to download "
+        "a helper CSV for subpoenas in lawsuits against police for destroying homeless "
+        "encampments."
+    )
+
+    st.markdown("#### SC-107 spreadsheet helper fields")
+    sc107_df = pd.DataFrame(
+        _SC107_TEMPLATE_COLS,
+        columns=["Spreadsheet Column", "Description", "Example"],
+    )
+    st.dataframe(sc107_df, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "📥 Download SC-107 helper CSV",
+        data=_sc107_csv_template_bytes(),
+        file_name="sc107_subpoena_helper.csv",
+        mime="text/csv",
+        type="secondary",
+        width="stretch",
+    )
+
+    st.markdown("#### Suggested subpoena request categories")
+    st.markdown(
+        "- Body-worn camera, dashboard camera, and other video/audio recordings "
+        "from the sweep.\n"
+        "- Incident reports, field notes, supplemental reports, and emails by officers.\n"
+        "- Dispatch logs, radio transmissions, and 911/311 call recordings.\n"
+        "- Complaints, investigations, internal affairs files, and disciplinary history for involved officers.\n"
+        "- Policies, training materials, written directives, and encampment sweep protocols.\n"
+        "- Property seizure, storage, chain-of-custody, and disposal records.\n"
+        "- All internal communications, memos, and coordination records between police, DPW, and other City agencies."
+    )

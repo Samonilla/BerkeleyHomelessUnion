@@ -591,6 +591,52 @@ def fill_sc150(case, template_path, output_path):
 
 
 # ─────────────────────────────────────────────────────────────
+# SC-107  Small Claims Subpoena and Declaration
+# ─────────────────────────────────────────────────────────────
+
+def fill_sc107(case, template_path, output_path):
+    """Fill SC-107 subpoena using `case['subpoena']` fields.
+
+    We populate the case caption, party names, recipient/custodian/service
+    address, the requested production list (joined into a text area), and
+    signature/date fields. The SC-107 template contains many widget names;
+    we set the most useful editable fields so the form is usable.
+    """
+    p = case["plaintiff"]
+    d = case.get("defendant", DEFENDANT_DEFAULTS["city_of_oakland"])
+    sub = case.get("subpoena", {}) or {}
+
+    requests = [r for r in sub.get("requests", []) if r]
+    requests_text = "\n".join(requests)
+
+    values = {
+        # Header / caption: party names + case number
+        "SC-107[0].Page2[0].Header[0].TitlePartyName[0].Party1_ft[0]": p.get("name", ""),
+        "SC-107[0].Page2[0].Header[0].TitlePartyName[0].Party2_ft[0]": d.get("name", ""),
+        "SC-107[0].Page2[0].Header[0].CaseNumber[0].CaseNumber_ft[0]": case.get("case_number", ""),
+
+        # Caption lines on page 1
+        "SC-107[0].Page1[0].Caption_sf[0].Plaintiff[0].Gr1[0].T813[0]": p.get("name", ""),
+        "SC-107[0].Page1[0].Caption_sf[0].Defendant[0].Gr3[0].T9[0]": d.get("name", ""),
+
+        # Recipient / custodian / service location
+        "SC-107[0].Page1[0].List1[0].Lib[0].Field3[0]": sub.get("to", ""),
+        "SC-107[0].Page1[0].List2[0].Field4[0]": sub.get("custodian", ""),
+        "SC-107[0].Page1[0].List2[0].Field5[0]": sub.get("service_location", ""),
+
+        # Put the requests into a large free-text area on page 3
+        "SC-107[0].Page3[0].List3[0].Lih[0].TextField51[0]": requests_text,
+
+        # Signature block (date + printed name)
+        "SC-107[0].Page2[0].Sign[0].Date1[0]": case.get("filing", {}).get("filing_date", ""),
+        "SC-107[0].Page2[0].Sign[0].PrintName[0]": p.get("name", ""),
+    }
+
+    _write_pdf(template_path, output_path, values)
+    print(f"  ✓ SC-107  → {output_path}")
+
+
+# ─────────────────────────────────────────────────────────────
 # TEMPLATE & META PATHS
 # ─────────────────────────────────────────────────────────────
 
@@ -602,6 +648,7 @@ TEMPLATES = {
     "sc150":  "templates/sc150.pdf",
     "fw001":  "templates/fw001.pdf",
     "fw003":  "templates/fw003.pdf",
+    "sc107":  "templates/sc107.pdf",
 }
 
 FIELD_META = {
