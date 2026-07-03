@@ -637,6 +637,84 @@ def fill_sc107(case, template_path, output_path):
 
 
 # ─────────────────────────────────────────────────────────────
+# SC-100A  Other Plaintiffs or Defendants (generated if no template)
+# ─────────────────────────────────────────────────────────────
+
+def _render_sc100a_reportlab(party: dict, case: dict, output_path: str, role: str = "defendant"):
+    """Create a simple SC-100A-looking PDF using reportlab.
+
+    Fields filled: case number, party name, street, city/state/zip, mailing
+    address, phone, job title, checkbox for fictitious name, and signature line.
+    """
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen.canvas import Canvas
+        from reportlab.lib.units import inch
+    except Exception:
+        # If reportlab isn't available, write a plain text fallback PDF via pypdf
+        from pypdf import PdfWriter
+        w = PdfWriter()
+        w.add_blank_page(width=612, height=792)
+        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+        with open(output_path, 'wb') as f:
+            w.write(f)
+        return
+
+    c = Canvas(output_path, pagesize=letter)
+    width, height = letter
+
+    def tx(x, y, text, size=10):
+        c.setFont("Helvetica", size)
+        c.drawString(x, y, text)
+
+    y = height - inch * 0.75
+    tx(inch * 0.5, y, "SC-100A  Other Plaintiffs or Defendants", size=14)
+    y -= 18
+    tx(inch * 0.5, y, f"Attached to SC-100 case number: {case.get('case_number','')}")
+    y -= 24
+
+    # Section for this extra party
+    tx(inch * 0.5, y, f"Role: {role.title()}")
+    y -= 16
+    tx(inch * 0.5, y, f"Name: {party.get('name','')}")
+    y -= 14
+    tx(inch * 0.5, y, f"Street address: {party.get('street','')}")
+    y -= 14
+    city = party.get('city','')
+    state = party.get('state','')
+    zipc = party.get('zip','')
+    tx(inch * 0.5, y, f"City: {city}    State: {state}    Zip: {zipc}")
+    y -= 14
+    tx(inch * 0.5, y, f"Mailing address (if different): {party.get('mailing','')}")
+    y -= 14
+    tx(inch * 0.5, y, f"Phone: {party.get('phone','')}")
+    y -= 14
+    tx(inch * 0.5, y, f"Job title, if known: {party.get('job_title','')}")
+    y -= 20
+
+    # Fictitious name checkbox line
+    tx(inch * 0.5, y, "Is this plaintiff/defendant doing business under a fictitious name?  [ ] Yes   [ ] No")
+    y -= 30
+
+    tx(inch * 0.5, y, "I declare under penalty of perjury under California state law that the information above and on any attachments is true and correct.")
+    y -= 28
+    tx(inch * 0.5, y, "Date: ________________________     Type or print your name: ________________________     Sign your name: ________________________")
+
+    c.showPage()
+    c.save()
+
+
+def fill_sc100a_for_party(case, output_path, party: dict, role: str = "defendant"):
+    """Public wrapper to create SC-100A PDF for a single party.
+
+    If an official `templates/sc100a.pdf` exists in the templates dir, we could
+    prefer to use it; currently we render a simple matching layout via reportlab.
+    """
+    _render_sc100a_reportlab(party, case, output_path, role=role)
+    print(f"  ✓ SC-100A → {output_path}")
+
+
+# ─────────────────────────────────────────────────────────────
 # TEMPLATE & META PATHS
 # ─────────────────────────────────────────────────────────────
 

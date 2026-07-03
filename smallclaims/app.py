@@ -25,6 +25,7 @@ from fill_forms import (
     fill_sc100, fill_fw001, fill_fw003, fill_sc112a, fill_sc150,
     fill_sc105, fill_sc107, validate_case, DEFENDANT_DEFAULTS,
 )
+from smallclaims.fill_forms import fill_sc100a_for_party
 
 _META_SC100 = str(HERE / "field_meta" / "sc100_fields.json")
 _META_FW001 = str(HERE / "field_meta" / "fw001_fields.json")
@@ -81,6 +82,15 @@ def _generate_pdfs(case: dict) -> dict:
             except Exception:
                 # Non-fatal: continue generating other forms even if SC-107 fails
                 pass
+
+            # SC-100A: generate one form per additional defendant (if present)
+            for i, ad in enumerate(case.get('additional_defendants', []) or [] , start=1):
+                try:
+                    outp = tmp/f"sc100a_defendant_{i}.pdf"
+                    fill_sc100a_for_party(case, str(outp), ad, role='defendant')
+                    result[f"SC-100A-DEF-{i}"] = outp.read_bytes()
+                except Exception:
+                    pass
     return result
 
 
@@ -635,6 +645,16 @@ with tab_manual:
             hide_index=True,
         )
 
+        # ── Additional Defendants (SC-100A) ─────────────────────────────────
+        st.divider()
+        st.subheader("Additional Defendants (optional)")
+        defs_df = st.data_editor(
+            pd.DataFrame({"Name": [""], "Street": [""], "City": [""], "State": ["CA"], "ZIP": [""], "Phone": [""], "Mailing": [""], "Job Title": [""]}),
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+        )
+
         # ── Fee Waiver ─────────────────────────────────────────────────────
         st.divider()
         st.subheader("Fee Waiver")
@@ -736,6 +756,25 @@ with tab_manual:
                 "requests":         ["", "", "", "", "", "", "", "", "", ""],
             },
         }
+
+        # Attach additional defendants from data editor
+        additional_defendants = []
+        for _, r in defs_df.iterrows():
+            name = str(r.get('Name','')).strip()
+            if not name:
+                continue
+            additional_defendants.append({
+                'name': name,
+                'street': str(r.get('Street','')).strip(),
+                'city': str(r.get('City','')).strip(),
+                'state': str(r.get('State','')).strip(),
+                'zip': str(r.get('ZIP','')).strip(),
+                'phone': str(r.get('Phone','')).strip(),
+                'mailing': str(r.get('Mailing','')).strip(),
+                'job_title': str(r.get('Job Title','')).strip(),
+            })
+
+        case['additional_defendants'] = additional_defendants
 
         try:
             pdfs = _generate_pdfs(case)
