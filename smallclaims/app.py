@@ -17,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from dateutil import parser as _dateutil
+from docx import Document
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
@@ -37,6 +38,51 @@ _TPL = HERE / "templates"
 
 def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "case"
+
+
+def _normalize_plain_language(text: str) -> str:
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if not text:
+        return ""
+    text = text[0].upper() + text[1:]
+    if text[-1] not in ".!?":
+        text += "."
+    return text
+
+
+def _build_guided_declaration(answers: dict) -> str:
+    incident_date = (answers.get("incident_date") or "").strip()
+    claim_amount = (answers.get("claim_amount") or "").strip()
+
+    parts = [
+        "I am the plaintiff in this action.",
+        "I am submitting this declaration under penalty of perjury and state that the following is true and correct.",
+    ]
+
+    if incident_date:
+        parts.append(f"On {incident_date}, the events described below occurred.")
+
+    for key in ["notice", "storage", "destruction", "property", "value", "presence", "request", "impact", "additional"]:
+        value = _normalize_plain_language(answers.get(key, ""))
+        if value:
+            parts.append(value)
+
+    if claim_amount:
+        parts.append(f"The total value of the property I lost is approximately ${claim_amount}.")
+
+    parts.append("I declare under penalty of perjury that the foregoing is true and correct.")
+    return "\n\n".join(parts)
+
+
+def _build_declaration_docx(text: str) -> bytes:
+    document = Document()
+    document.add_heading("Declaration", level=1)
+    for paragraph_text in text.split("\n\n"):
+        document.add_paragraph(paragraph_text)
+
+    buf = io.BytesIO()
+    document.save(buf)
+    return buf.getvalue()
 
 
 @contextlib.contextmanager
@@ -711,14 +757,78 @@ with tab_manual:
             ),
             height=120,
         )
-        declaration_detail = st.text_area(
-            "Declaration — describe in detail, in first person, what happened",
-            placeholder=(
-                "I am the plaintiff in this action. On [date], the City of Oakland DPW "
-                "conducted an encampment sweep at [location] and destroyed my personal property. "
-                "I was present and saw the officers…"
-            ),
-            height=160,
+        declaration_notice = st.text_area(
+            "Were you provided notice before your property was taken, moved, or destroyed?",
+            placeholder="Describe whether you were warned, when you were warned, and by whom.",
+            height=70,
+        )
+        declaration_storage = st.text_area(
+            "Did the City or another agency provide storage for your belongings?",
+            placeholder="Explain whether your property was stored, where it was kept, and whether you were told where it would be kept.",
+            height=70,
+        )
+        declaration_destruction = st.text_area(
+            "Did you witness them destroy your belongings or discard them?",
+            placeholder="Describe what you saw, who was present, and what happened to the property.",
+            height=70,
+        )
+        declaration_property = st.text_area(
+            "What property was taken, lost, or destroyed?",
+            placeholder="List the items, any identifying details, and how they were important to you.",
+            height=80,
+        )
+        declaration_value = st.text_area(
+            "What was the value of the property you lost?",
+            placeholder="Describe the value, replacement cost, or any other information that shows the loss.",
+            height=70,
+        )
+        declaration_presence = st.text_area(
+            "Were you present when the property was taken or destroyed?",
+            placeholder="Explain what you saw and whether you were able to protect or retrieve your belongings.",
+            height=70,
+        )
+        declaration_request = st.text_area(
+            "Did you ask for your property to be returned, stored, or preserved?",
+            placeholder="Describe any request you made to the City or agency and how they responded.",
+            height=70,
+        )
+        declaration_impact = st.text_area(
+            "How did the loss affect you?",
+            placeholder="Describe the impact on your daily life, your belongings, and any hardship you experienced.",
+            height=70,
+        )
+        declaration_additional = st.text_area(
+            "Is there anything else important to add?",
+            placeholder="Add any other facts that help explain what happened and why the loss was wrongful.",
+            height=80,
+        )
+        declaration_text = _build_guided_declaration(
+            {
+                "incident_date": incident_date.strip(),
+                "claim_amount": claim_amount.strip(),
+                "notice": declaration_notice.strip(),
+                "storage": declaration_storage.strip(),
+                "destruction": declaration_destruction.strip(),
+                "property": declaration_property.strip(),
+                "value": declaration_value.strip(),
+                "presence": declaration_presence.strip(),
+                "request": declaration_request.strip(),
+                "impact": declaration_impact.strip(),
+                "additional": declaration_additional.strip(),
+            }
+        )
+        st.text_area(
+            "Plain-language declaration draft",
+            value=declaration_text,
+            height=220,
+            disabled=True,
+        )
+        st.download_button(
+            "⬇️ Download declaration as Word document",
+            data=_build_declaration_docx(declaration_text),
+            file_name="guided_declaration.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            disabled=not declaration_text.strip(),
         )
         damages_calc = st.text_area(
             "How Damages Are Calculated",
@@ -850,7 +960,7 @@ with tab_manual:
             },
             "declaration": {
                 "declarant_name": name.strip(),
-                "content":        declaration_detail.strip() or claim_reason.strip(),
+                "content":        declaration_text.strip() or claim_reason.strip(),
             },
             "subpoena": {
                 "case_caption":     "",
