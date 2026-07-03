@@ -674,7 +674,7 @@ with tab_manual:
 
         # ── Items ──────────────────────────────────────────────────────────
         st.divider()
-        st.subheader("Itemized Property (SC-112A attachment)")
+        st.subheader("Itemized Property")
         items_df = st.data_editor(
             pd.DataFrame({"Description": ["", "", ""], "Value ($)": ["", "", ""]}),
             num_rows="dynamic",
