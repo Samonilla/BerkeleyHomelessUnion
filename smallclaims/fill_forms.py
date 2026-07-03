@@ -32,18 +32,45 @@ def _flatten_pdf(path: str, scale: float = 2.0) -> None:
         return
 
     try:
+        # Build an image-only PDF using reportlab to avoid carrying over any
+        # AcroForm or widget annotations from the original PDF.
         doc = fitz.open(path)
-        new = fitz.open()
         mat = fitz.Matrix(scale, scale)
-        for page in doc:
-            pix = page.get_pixmap(matrix=mat)
-            img_pdf = fitz.open("pdf", pix.tobytes("pdf"))
-            new.insert_pdf(img_pdf)
-        tmp = path + ".flattmp"
-        new.save(tmp)
-        new.close()
-        doc.close()
-        os.replace(tmp, path)
+        try:
+            from reportlab.pdfgen.canvas import Canvas
+            from reportlab.lib.utils import ImageReader
+            import io as _io
+
+            buf = _io.BytesIO()
+            c = Canvas(buf)
+            for page in doc:
+                pix = page.get_pixmap(matrix=mat)
+                png = pix.tobytes("png")
+                img = ImageReader(_io.BytesIO(png))
+                # Use pixel dimensions for page size so the image fills the page
+                w, h = pix.width, pix.height
+                c.setPageSize((w, h))
+                c.drawImage(img, 0, 0, width=w, height=h)
+                c.showPage()
+            c.save()
+            tmp = path + ".flattmp"
+            with open(tmp, 'wb') as f:
+                f.write(buf.getvalue())
+            buf.close()
+            doc.close()
+            os.replace(tmp, path)
+        except Exception:
+            # If reportlab isn't available or fails, fall back to PyMuPDF insertion
+            new = fitz.open()
+            for page in doc:
+                pix = page.get_pixmap(matrix=mat)
+                img_pdf = fitz.open("pdf", pix.tobytes("pdf"))
+                new.insert_pdf(img_pdf)
+            tmp = path + ".flattmp"
+            new.save(tmp)
+            new.close()
+            doc.close()
+            os.replace(tmp, path)
     except Exception:
         # Non-fatal: if flattening fails, leave original PDF as-is
         return
