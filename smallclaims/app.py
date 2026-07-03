@@ -26,6 +26,7 @@ from fill_forms import (
     fill_sc105, fill_sc107, fill_sc100a_for_party, validate_case, DEFENDANT_DEFAULTS,
 )
 from courts import ALL_COUNTIES, courthouses_for_county, court_info_string
+from defendants import ALL_CITIES, defendant_info
 
 _META_SC100 = str(HERE / "field_meta" / "sc100_fields.json")
 _META_FW001 = str(HERE / "field_meta" / "fw001_fields.json")
@@ -354,7 +355,7 @@ def intake_row_to_case(row: pd.Series, defaults: dict) -> dict:
             "phone":  phone,
             "email":  g("email"),
         },
-        "defendant": DEFENDANT_DEFAULTS["city_of_oakland"],
+        "defendant": defaults.get("defendant") or DEFENDANT_DEFAULTS["city_of_oakland"],
         "claim": {
             "amount":                defaults.get("claim_amount", "10000"),
             "reason":                reason,
@@ -421,7 +422,7 @@ def template_row_to_case(row: pd.Series) -> dict:
             "phone":  s("plaintiff_phone"),
             "email":  s("plaintiff_email"),
         },
-        "defendant": DEFENDANT_DEFAULTS["city_of_oakland"],
+        "defendant": DEFENDANT_DEFAULTS["city_of_oakland"],  # template format always uses spreadsheet data
         "claim": {
             "amount":                s("claim_amount"),
             "reason":                reason,
@@ -604,7 +605,28 @@ def _court_selector(key_prefix: str, default_county: str = "Alameda") -> dict:
         "zip":     chosen["zip"],
     }
 
-tab_manual, tab_sheet = st.tabs(["📝 Manual Entry", "📊 Spreadsheet Import"])
+def _defendant_selector(key_prefix: str, default_city: str = "Oakland") -> dict | None:
+    """Dropdown of all CA municipalities. Returns defendant dict or None for custom entry."""
+    city_options = ["— Custom (enter below) —"] + ALL_CITIES
+    default_idx = ALL_CITIES.index(default_city) + 1 if default_city in ALL_CITIES else 1
+    selected = st.selectbox(
+        "Defendant City / Municipality *",
+        city_options,
+        index=default_idx,
+        key=f"{key_prefix}_def_city",
+        help="Select the California city or town being sued. For county agencies use Custom.",
+    )
+    if selected == "— Custom (enter below) —":
+        return None
+    d = defendant_info(selected)
+    st.caption(
+        f"**{d['name']}** · {d['address']}, {d['city']}, CA {d['zip']} "
+        f"· Agent for service: {d['agent_name']}"
+    )
+    return d
+
+
+tab_manual, tab_sheet, tab_sc107 = st.tabs(["📝 Manual Entry", "📊 Spreadsheet Import", "📋 SC-107 Subpoena"])
 
 
 # ══════════════════════════════════════════════════════
@@ -621,7 +643,33 @@ with tab_manual:
     )
     st.divider()
 
+    st.subheader("Defendant")
+    manual_def = _defendant_selector("manual")
+    st.divider()
+
     with st.form("manual_form", border=False):
+
+        # ── Custom defendant fields (only shown when "Custom" is selected) ──
+        if manual_def is None:
+            st.subheader("Defendant (Custom)")
+            cd1, cd2 = st.columns(2)
+            with cd1:
+                def_name    = st.text_input("Defendant Name *", placeholder="City of Anytown")
+                def_street  = st.text_input("Defendant Street", placeholder="1 City Hall Plaza")
+                def_city_f  = st.text_input("Defendant City", placeholder="Anytown")
+                def_state_f = st.text_input("Defendant State", value="CA")
+                def_zip_f   = st.text_input("Defendant ZIP", placeholder="90000")
+            with cd2:
+                def_agent_name  = st.text_input("Agent for Service (Name)", value="City Clerk")
+                def_agent_title = st.text_input("Agent Title", value="City Clerk")
+                def_agent_street= st.text_input("Agent Street", placeholder="1 City Hall Plaza")
+                def_agent_city  = st.text_input("Agent City", placeholder="Anytown")
+                def_agent_zip   = st.text_input("Agent ZIP", placeholder="90000")
+            st.divider()
+        else:
+            # Placeholders so Streamlit doesn't complain about undefined vars after form
+            def_name = def_street = def_city_f = def_state_f = def_zip_f = ""
+            def_agent_name = def_agent_title = def_agent_street = def_agent_city = def_agent_zip = ""
 
         # ── Plaintiff ──────────────────────────────────────────────────────
         st.subheader("Plaintiff")
@@ -743,6 +791,23 @@ with tab_manual:
         ]
         basis_code = fw_basis.split(" — ")[0].strip()
 
+        if manual_def is not None:
+            _defendant = manual_def
+        else:
+            _defendant = {
+                "name":          def_name.strip(),
+                "address":       def_street.strip(),
+                "city":          def_city_f.strip(),
+                "state":         def_state_f.strip() or "CA",
+                "zip":           def_zip_f.strip(),
+                "agent_name":    def_agent_name.strip() or "City Clerk",
+                "agent_title":   def_agent_title.strip() or "City Clerk",
+                "agent_address": def_agent_street.strip(),
+                "agent_city":    def_agent_city.strip(),
+                "agent_state":   "CA",
+                "agent_zip":     def_agent_zip.strip(),
+            }
+
         case = {
             "court": manual_court,
             "plaintiff": {
@@ -754,7 +819,7 @@ with tab_manual:
                 "phone":  phone.strip(),
                 "email":  email.strip(),
             },
-            "defendant": DEFENDANT_DEFAULTS["city_of_oakland"],
+            "defendant": _defendant,
             "claim": {
                 "amount":                claim_amount.strip(),
                 "reason":                claim_reason.strip(),
@@ -943,6 +1008,9 @@ with tab_sheet:
             f"{batch_court['address']}, {batch_court['city']}, CA {batch_court['zip']}"
         )
 
+        st.markdown("**Defendant**")
+        batch_def = _defendant_selector("batch")
+
         with st.form("batch_defaults_form", border=True):
             d1, d2 = st.columns(2)
             with d1:
@@ -998,8 +1066,10 @@ with tab_sheet:
             )
 
         if run_batch:
+            _batch_defendant = batch_def if batch_def is not None else DEFENDANT_DEFAULTS["city_of_oakland"]
             defaults = {
                 "court":                 batch_court,
+                "defendant":             _batch_defendant,
                 "filing_date":           b_filing_date.strip(),
                 "govt_claim_filed_date": b_govt_claim_date.strip(),
                 "claim_amount":          b_claim_amount.strip(),
