@@ -50,35 +50,62 @@ def _normalize_plain_language(text: str) -> str:
     return text
 
 
-def _build_guided_declaration(answers: dict) -> str:
-    incident_date = (answers.get("incident_date") or "").strip()
-    claim_amount = (answers.get("claim_amount") or "").strip()
+def _declaration_follow_up_questions(text: str) -> list[str]:
+    lowered = (text or "").lower()
+    questions = []
+    if "notice" not in lowered and "warn" not in lowered and "told" not in lowered:
+        questions.append("Were you given notice before your property was taken, moved, or destroyed?")
+    if "storage" not in lowered and "store" not in lowered and "kept" not in lowered:
+        questions.append("Was your property stored somewhere after it was taken, and were you told where it was kept?")
+    if "destroy" not in lowered and "discard" not in lowered and "trash" not in lowered:
+        questions.append("Did you see the property destroyed, discarded, or thrown away?")
+    if "property" not in lowered and "belong" not in lowered and "item" not in lowered:
+        questions.append("What property was taken, lost, or destroyed?")
+    if "value" not in lowered and "$" not in lowered and "cost" not in lowered:
+        questions.append("What was the value of the property you lost or the cost to replace it?")
+    if "present" not in lowered and "there" not in lowered and "witness" not in lowered:
+        questions.append("Were you present when the property was taken or destroyed, and what did you observe?")
+    if "return" not in lowered and "request" not in lowered and "ask" not in lowered:
+        questions.append("Did you ask the City or another agency to return, store, or preserve your property?")
+    if "affect" not in lowered and "hardship" not in lowered and "impact" not in lowered:
+        questions.append("How did the loss affect you or your daily life?")
+    return questions
 
-    parts = [
+
+def _build_guided_declaration(text: str, answers: dict) -> str:
+    intro = [
         "I am the plaintiff in this action.",
         "I am submitting this declaration under penalty of perjury and state that the following is true and correct.",
     ]
+    facts = []
 
-    if incident_date:
-        parts.append(f"On {incident_date}, the events described below occurred.")
+    if answers.get("incident_date"):
+        facts.append(f"On {answers['incident_date']}, the events described below occurred.")
 
-    for key in ["notice", "storage", "destruction", "property", "value", "presence", "request", "impact", "additional"]:
-        value = _normalize_plain_language(answers.get(key, ""))
-        if value:
-            parts.append(value)
+    for key, value in answers.items():
+        if key == "incident_date":
+            continue
+        cleaned = _normalize_plain_language(value)
+        if cleaned:
+            facts.append(cleaned)
 
-    if claim_amount:
-        parts.append(f"The total value of the property I lost is approximately ${claim_amount}.")
+    if text.strip():
+        facts.append(_normalize_plain_language(text))
 
-    parts.append("I declare under penalty of perjury that the foregoing is true and correct.")
-    return "\n\n".join(parts)
+    if answers.get("claim_amount"):
+        facts.append(f"The total value of the property I lost is approximately ${answers['claim_amount']}.")
+
+    paragraphs = intro + [f"{i}. {fact}" for i, fact in enumerate(facts, start=1)]
+    paragraphs.append("I declare under penalty of perjury that the foregoing is true and correct.")
+    return "\n\n".join(paragraphs)
 
 
 def _build_declaration_docx(text: str) -> bytes:
     document = Document()
     document.add_heading("Declaration", level=1)
     for paragraph_text in text.split("\n\n"):
-        document.add_paragraph(paragraph_text)
+        if paragraph_text.strip():
+            document.add_paragraph(paragraph_text)
 
     buf = io.BytesIO()
     document.save(buf)
@@ -757,70 +784,27 @@ with tab_manual:
             ),
             height=120,
         )
-        declaration_notice = st.text_area(
-            "Were you provided notice before your property was taken, moved, or destroyed?",
-            placeholder="Describe whether you were warned, when you were warned, and by whom.",
-            height=70,
+        declaration_text_input = st.text_area(
+            "Write your declaration in your own words",
+            placeholder="Start typing what happened. For example: I was present when the City took my belongings, I was not given notice, and I saw them throw away my property.",
+            height=180,
         )
-        declaration_storage = st.text_area(
-            "Did the City or another agency provide storage for your belongings?",
-            placeholder="Explain whether your property was stored, where it was kept, and whether you were told where it would be kept.",
-            height=70,
-        )
-        declaration_destruction = st.text_area(
-            "Did you witness them destroy your belongings or discard them?",
-            placeholder="Describe what you saw, who was present, and what happened to the property.",
-            height=70,
-        )
-        declaration_property = st.text_area(
-            "What property was taken, lost, or destroyed?",
-            placeholder="List the items, any identifying details, and how they were important to you.",
-            height=80,
-        )
-        declaration_value = st.text_area(
-            "What was the value of the property you lost?",
-            placeholder="Describe the value, replacement cost, or any other information that shows the loss.",
-            height=70,
-        )
-        declaration_presence = st.text_area(
-            "Were you present when the property was taken or destroyed?",
-            placeholder="Explain what you saw and whether you were able to protect or retrieve your belongings.",
-            height=70,
-        )
-        declaration_request = st.text_area(
-            "Did you ask for your property to be returned, stored, or preserved?",
-            placeholder="Describe any request you made to the City or agency and how they responded.",
-            height=70,
-        )
-        declaration_impact = st.text_area(
-            "How did the loss affect you?",
-            placeholder="Describe the impact on your daily life, your belongings, and any hardship you experienced.",
-            height=70,
-        )
-        declaration_additional = st.text_area(
-            "Is there anything else important to add?",
-            placeholder="Add any other facts that help explain what happened and why the loss was wrongful.",
-            height=80,
-        )
+        declaration_answers = {}
+        follow_up_questions = _declaration_follow_up_questions(declaration_text_input)
+        for question in follow_up_questions:
+            declaration_answers[question] = st.text_area(question, height=70)
         declaration_text = _build_guided_declaration(
+            declaration_text_input,
             {
                 "incident_date": incident_date.strip(),
                 "claim_amount": claim_amount.strip(),
-                "notice": declaration_notice.strip(),
-                "storage": declaration_storage.strip(),
-                "destruction": declaration_destruction.strip(),
-                "property": declaration_property.strip(),
-                "value": declaration_value.strip(),
-                "presence": declaration_presence.strip(),
-                "request": declaration_request.strip(),
-                "impact": declaration_impact.strip(),
-                "additional": declaration_additional.strip(),
-            }
+                **declaration_answers,
+            },
         )
         st.text_area(
-            "Plain-language declaration draft",
+            "Declaration draft",
             value=declaration_text,
-            height=220,
+            height=260,
             disabled=True,
         )
         st.download_button(
