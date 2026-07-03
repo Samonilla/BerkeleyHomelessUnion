@@ -224,7 +224,7 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
 
     values = {
         # Header
-        "SC-100[0].Page1[0].CaptionRight[0].CourtInfo[0]": COURT_INFO,
+        "SC-100[0].Page1[0].CaptionRight[0].County[0].CourtInfo[0]": COURT_INFO,
 
         # Plaintiff
         "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffName1[0]":    p["name"],
