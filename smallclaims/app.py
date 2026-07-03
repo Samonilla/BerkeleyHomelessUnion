@@ -75,7 +75,36 @@ def _make_zip(pdfs: dict, slug: str) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for label, data in pdfs.items():
-            zf.writestr(f"{slug}_{label.lower().replace('-', '')}.pdf", data)
+            # Try to rasterize/flatten PDF bytes so appearances are baked in for
+            # viewers that ignore /NeedAppearances. If PyMuPDF isn't available,
+            # fall back to the original bytes.
+            try:
+                import fitz
+                # Open original bytes, render each page to an image-PDF, then
+                # combine pages into a new PDF bytes object.
+                doc = fitz.open(stream=data, filetype="pdf")
+                new = fitz.open()
+                mat = fitz.Matrix(2.0, 2.0)
+                for page in doc:
+                    pix = page.get_pixmap(matrix=mat)
+                    img_pdf = fitz.open("pdf", pix.tobytes("pdf"))
+                    new.insert_pdf(img_pdf)
+                try:
+                    out_bytes = new.write()
+                except Exception:
+                    # Fallback: save to temp file then read
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpf:
+                        new.save(tmpf.name)
+                        tmpname = tmpf.name
+                    with open(tmpname, "rb") as tf:
+                        out_bytes = tf.read()
+                    os.unlink(tmpname)
+                new.close()
+                doc.close()
+            except Exception:
+                out_bytes = data
+
+            zf.writestr(f"{slug}_{label.lower().replace('-', '')}.pdf", out_bytes)
     return buf.getvalue()
 
 
