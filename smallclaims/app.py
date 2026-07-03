@@ -807,13 +807,6 @@ with tab_manual:
             height=260,
             disabled=True,
         )
-        st.download_button(
-            "⬇️ Download declaration as Word document",
-            data=_build_declaration_docx(declaration_text),
-            file_name="guided_declaration.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            disabled=not declaration_text.strip(),
-        )
         damages_calc = st.text_area(
             "How Damages Are Calculated",
             placeholder=(
@@ -875,6 +868,14 @@ with tab_manual:
         submitted = st.form_submit_button(
             "Generate Forms", type="primary", width="stretch"
         )
+
+    st.download_button(
+        "⬇️ Download declaration as Word document",
+        data=_build_declaration_docx(declaration_text),
+        file_name="guided_declaration.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        disabled=not declaration_text.strip(),
+    )
 
     # ── Handle submission ──────────────────────────────────────────────────
     if submitted:
