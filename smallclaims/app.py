@@ -100,6 +100,31 @@ def _build_guided_declaration(text: str, answers: dict) -> str:
     return "\n\n".join(paragraphs)
 
 
+def _build_answer_inference(question: str, answer: str) -> str:
+    cleaned = (answer or "").strip()
+    if not cleaned:
+        return ""
+    lowered = cleaned.lower()
+
+    if "no" in lowered or "not" in lowered or "didn't" in lowered or "did not" in lowered:
+        if "store" in lowered or "storage" in lowered or "kept" in lowered:
+            return f"The City did not store my property, and I know that because {cleaned}."
+        if "notice" in lowered or "warn" in lowered:
+            return f"I was not given notice, and I know that because {cleaned}."
+        if "destroy" in lowered or "discard" in lowered or "throw" in lowered:
+            return f"I did not see the City preserve my property, and I know that because {cleaned}."
+
+    if "yes" in lowered or "did" in lowered or "was" in lowered:
+        if "store" in lowered or "storage" in lowered or "kept" in lowered:
+            return f"The City stored my property, and I know that because {cleaned}."
+        if "notice" in lowered or "warn" in lowered:
+            return f"I was given notice, and I know that because {cleaned}."
+        if "destroy" in lowered or "discard" in lowered or "throw" in lowered:
+            return f"I witnessed the property being destroyed, and I know that because {cleaned}."
+
+    return f"I understand that {cleaned}."
+
+
 def _build_declaration_docx(text: str) -> bytes:
     document = Document()
     document.add_heading("Declaration", level=1)
@@ -792,7 +817,11 @@ with tab_manual:
         declaration_answers = {}
         follow_up_questions = _declaration_follow_up_questions(declaration_text_input)
         for question in follow_up_questions:
-            declaration_answers[question] = st.text_area(question, height=70)
+            answer = st.text_area(question, height=70)
+            declaration_answers[question] = answer
+            inference = _build_answer_inference(question, answer)
+            if inference:
+                st.caption(inference)
         declaration_text = _build_guided_declaration(
             declaration_text_input,
             {
