@@ -50,28 +50,6 @@ def _normalize_plain_language(text: str) -> str:
     return text
 
 
-def _declaration_follow_up_questions(text: str) -> list[str]:
-    lowered = (text or "").lower()
-    questions = []
-    if "notice" not in lowered and "warn" not in lowered and "told" not in lowered:
-        questions.append("Were you given notice before your property was taken, moved, or destroyed?")
-    if "storage" not in lowered and "store" not in lowered and "kept" not in lowered:
-        questions.append("Was your property stored somewhere after it was taken, and were you told where it was kept?")
-    if "destroy" not in lowered and "discard" not in lowered and "trash" not in lowered:
-        questions.append("Did you see the property destroyed, discarded, or thrown away?")
-    if "property" not in lowered and "belong" not in lowered and "item" not in lowered:
-        questions.append("What property was taken, lost, or destroyed?")
-    if "value" not in lowered and "$" not in lowered and "cost" not in lowered:
-        questions.append("What was the value of the property you lost or the cost to replace it?")
-    if "present" not in lowered and "there" not in lowered and "witness" not in lowered:
-        questions.append("Were you present when the property was taken or destroyed, and what did you observe?")
-    if "return" not in lowered and "request" not in lowered and "ask" not in lowered:
-        questions.append("Did you ask the City or another agency to return, store, or preserve your property?")
-    if "affect" not in lowered and "hardship" not in lowered and "impact" not in lowered:
-        questions.append("How did the loss affect you or your daily life?")
-    return questions
-
-
 def _build_guided_declaration(text: str, answers: dict) -> str:
     intro = [
         "I am the plaintiff in this action.",
@@ -83,11 +61,29 @@ def _build_guided_declaration(text: str, answers: dict) -> str:
         facts.append(f"On {answers['incident_date']}, the events described below occurred.")
 
     for key, value in answers.items():
-        if key == "incident_date":
+        if key in {"incident_date", "items", "claim_amount"}:
             continue
         cleaned = _normalize_plain_language(value)
         if cleaned:
             facts.append(cleaned)
+
+    items = answers.get("items") or []
+    if items:
+        item_lines = []
+        for item in items:
+            description = str(item.get("description") or "").strip()
+            value = str(item.get("value") or "").strip()
+            condition = str(item.get("condition") or "").strip() or "Unknown"
+            if description and value:
+                item_lines.append(
+                    f"I lost {description}, which was valued at ${value}, and it was in {condition.lower()} condition when it was destroyed."
+                )
+            elif description:
+                item_lines.append(
+                    f"I lost {description}, and it was in {condition.lower()} condition when it was destroyed."
+                )
+        if item_lines:
+            facts.append(" ".join(item_lines))
 
     if text.strip():
         facts.append(_normalize_plain_language(text))
@@ -98,31 +94,6 @@ def _build_guided_declaration(text: str, answers: dict) -> str:
     paragraphs = intro + [f"{i}. {fact}" for i, fact in enumerate(facts, start=1)]
     paragraphs.append("I declare under penalty of perjury that the foregoing is true and correct.")
     return "\n\n".join(paragraphs)
-
-
-def _build_answer_inference(question: str, answer: str) -> str:
-    cleaned = (answer or "").strip()
-    if not cleaned:
-        return ""
-    lowered = cleaned.lower()
-
-    if "no" in lowered or "not" in lowered or "didn't" in lowered or "did not" in lowered:
-        if "store" in lowered or "storage" in lowered or "kept" in lowered:
-            return f"The City did not store my property, and I know that because {cleaned}."
-        if "notice" in lowered or "warn" in lowered:
-            return f"I was not given notice, and I know that because {cleaned}."
-        if "destroy" in lowered or "discard" in lowered or "throw" in lowered:
-            return f"I did not see the City preserve my property, and I know that because {cleaned}."
-
-    if "yes" in lowered or "did" in lowered or "was" in lowered:
-        if "store" in lowered or "storage" in lowered or "kept" in lowered:
-            return f"The City stored my property, and I know that because {cleaned}."
-        if "notice" in lowered or "warn" in lowered:
-            return f"I was given notice, and I know that because {cleaned}."
-        if "destroy" in lowered or "discard" in lowered or "throw" in lowered:
-            return f"I witnessed the property being destroyed, and I know that because {cleaned}."
-
-    return f"I understand that {cleaned}."
 
 
 def _build_declaration_docx(text: str) -> bytes:
@@ -724,7 +695,7 @@ def _defendant_selector(key_prefix: str, default_city: str = "Oakland") -> dict 
     return d
 
 
-tab_manual, tab_sheet, tab_sc107 = st.tabs(["📝 Manual Entry", "📊 Spreadsheet Import", "📋 SC-107 Subpoena"])
+tab_manual, tab_sheet = st.tabs(["📝 Manual Entry", "📊 Spreadsheet Import"])
 
 
 # ══════════════════════════════════════════════════════
@@ -745,158 +716,212 @@ with tab_manual:
     manual_def = _defendant_selector("manual")
     st.divider()
 
-    with st.form("manual_form", border=False):
 
-        # ── Custom defendant fields (only shown when "Custom" is selected) ──
-        if manual_def is None:
-            st.subheader("Defendant (Custom)")
-            cd1, cd2 = st.columns(2)
-            with cd1:
-                def_name    = st.text_input("Defendant Name *", placeholder="City of Anytown")
-                def_street  = st.text_input("Defendant Street", placeholder="1 City Hall Plaza")
-                def_city_f  = st.text_input("Defendant City", placeholder="Anytown")
-                def_state_f = st.text_input("Defendant State", value="CA")
-                def_zip_f   = st.text_input("Defendant ZIP", placeholder="90000")
-            with cd2:
-                def_agent_name  = st.text_input("Agent for Service (Name)", value="City Clerk")
-                def_agent_title = st.text_input("Agent Title", value="City Clerk")
-                def_agent_street= st.text_input("Agent Street", placeholder="1 City Hall Plaza")
-                def_agent_city  = st.text_input("Agent City", placeholder="Anytown")
-                def_agent_zip   = st.text_input("Agent ZIP", placeholder="90000")
-            st.divider()
-        else:
-            # Placeholders so Streamlit doesn't complain about undefined vars after form
-            def_name = def_street = def_city_f = def_state_f = def_zip_f = ""
-            def_agent_name = def_agent_title = def_agent_street = def_agent_city = def_agent_zip = ""
-
-        # ── Plaintiff ──────────────────────────────────────────────────────
-        st.subheader("Plaintiff")
-        c1, c2 = st.columns(2)
-        with c1:
-            name   = st.text_input("Full Legal Name *", placeholder="Jane Doe")
-            street = st.text_input(
-                "Street / Mailing Address",
-                placeholder="c/o 1234 Telegraph Ave  (use c/o for unhoused clients)",
-            )
-            phone  = st.text_input("Phone", placeholder="510-555-0100")
-        with c2:
-            city = st.text_input("City", value="Oakland")
-            cs1, cs2 = st.columns(2)
-            with cs1:
-                state = st.text_input("State", value="CA")
-            with cs2:
-                zip_  = st.text_input("ZIP", placeholder="94609")
-            email = st.text_input("Email (optional)", placeholder="")
-
-        # ── Incident ───────────────────────────────────────────────────────
+    # ── Custom defendant fields (only shown when "Custom" is selected) ──
+    if manual_def is None:
+        st.subheader("Defendant (Custom)")
+        cd1, cd2 = st.columns(2)
+        with cd1:
+            def_name    = st.text_input("Defendant Name *", placeholder="City of Anytown")
+            def_street  = st.text_input("Defendant Street", placeholder="1 City Hall Plaza")
+            def_city_f  = st.text_input("Defendant City", placeholder="Anytown")
+            def_state_f = st.text_input("Defendant State", value="CA")
+            def_zip_f   = st.text_input("Defendant ZIP", placeholder="90000")
+        with cd2:
+            def_agent_name  = st.text_input("Agent for Service (Name)", value="City Clerk")
+            def_agent_title = st.text_input("Agent Title", value="City Clerk")
+            def_agent_street= st.text_input("Agent Street", placeholder="1 City Hall Plaza")
+            def_agent_city  = st.text_input("Agent City", placeholder="Anytown")
+            def_agent_zip   = st.text_input("Agent ZIP", placeholder="90000")
         st.divider()
-        st.subheader("Incident & Claim")
-        c1, c2 = st.columns(2)
-        with c1:
-            incident_date   = st.text_input("Date of Sweep *", placeholder="MM/DD/YYYY")
-            filing_date     = st.text_input("Filing Date *", placeholder="MM/DD/YYYY")
-        with c2:
-            govt_claim_date = st.text_input(
-                "Govt Claim Filed with City Clerk *", placeholder="MM/DD/YYYY"
-            )
-            claim_amount = st.text_input("Claim Amount ($) *", placeholder="10000")
+    else:
+        # Placeholders so Streamlit doesn't complain about undefined vars after form
+        def_name = def_street = def_city_f = def_state_f = def_zip_f = ""
+        def_agent_name = def_agent_title = def_agent_street = def_agent_city = def_agent_zip = ""
 
-        claim_reason = st.text_area(
-            "Brief summary, used on SC-100",
-            placeholder=(
-                "On [date], the City of Oakland DPW conducted an encampment sweep "
-                "at [location] and destroyed Plaintiff's personal property…"
+    # ── Plaintiff ──────────────────────────────────────────────────────
+    st.subheader("Plaintiff")
+    c1, c2 = st.columns(2)
+    with c1:
+        name   = st.text_input("Full Legal Name *", placeholder="Jane Doe")
+        street = st.text_input(
+            "Street / Mailing Address",
+            placeholder="c/o 1234 Telegraph Ave  (use c/o for unhoused clients)",
+        )
+        phone  = st.text_input("Phone", placeholder="510-555-0100")
+    with c2:
+        city = st.text_input("City", value="Oakland")
+        cs1, cs2 = st.columns(2)
+        with cs1:
+            state = st.text_input("State", value="CA")
+        with cs2:
+            zip_  = st.text_input("ZIP", placeholder="94609")
+        email = st.text_input("Email (optional)", placeholder="")
+
+    # ── Incident ───────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Incident & Claim")
+    c1, c2 = st.columns(2)
+    with c1:
+        incident_date   = st.text_input("Date of Sweep *", placeholder="MM/DD/YYYY")
+        filing_date     = st.text_input("Filing Date *", placeholder="MM/DD/YYYY")
+    with c2:
+        govt_claim_date = st.text_input(
+            "Govt Claim Filed with City Clerk *", placeholder="MM/DD/YYYY"
+        )
+        claim_amount = st.text_input("Claim Amount ($) *", placeholder="10000")
+
+    claim_reason = st.text_area(
+        "Brief summary, used on SC-100",
+        placeholder=(
+            "On [date], the City of Oakland DPW conducted an encampment sweep "
+            "at [location] and destroyed Plaintiff's personal property…"
+        ),
+        height=120,
+    )
+    declaration_text_input = st.text_area(
+        "Write your declaration in your own words",
+        placeholder="Start typing what happened. For example: I was present when the City took my belongings, I was not given notice, and I saw them throw away my property.",
+        height=180,
+    )
+
+    # ── Items ──────────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Itemized Property")
+    st.caption("List each item that was destroyed, its estimated value, and its condition before the loss.")
+    items_df = st.data_editor(
+        pd.DataFrame({
+            "Description": ["", "", ""],
+            "Value ($)": ["", "", ""],
+            "Condition": ["New", "Good", "Fair"],
+        }),
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Description": st.column_config.TextColumn(width="large"),
+            "Value ($)": st.column_config.TextColumn(width="small"),
+            "Condition": st.column_config.SelectboxColumn(
+                width="small",
+                options=["New", "Good", "Fair", "Salvage"],
             ),
-            height=120,
-        )
-        declaration_text_input = st.text_area(
-            "Write your declaration in your own words",
-            placeholder="Start typing what happened. For example: I was present when the City took my belongings, I was not given notice, and I saw them throw away my property.",
-            height=180,
-        )
-        declaration_answers = {}
-        follow_up_questions = _declaration_follow_up_questions(declaration_text_input)
-        for question in follow_up_questions:
-            answer = st.text_area(question, height=70)
-            declaration_answers[question] = answer
-            inference = _build_answer_inference(question, answer)
-            if inference:
-                st.caption(inference)
+        },
+        hide_index=True,
+    )
+
+    if st.button("Generate declaration", use_container_width=True):
+        items = []
+        for _, r in items_df.iterrows():
+            description = str(r.get("Description", "")).strip()
+            if not description:
+                continue
+            items.append({
+                "description": description,
+                "value": str(r.get("Value ($)", "")).strip(),
+                "condition": str(r.get("Condition", "")).strip() or "Unknown",
+            })
+
         declaration_text = _build_guided_declaration(
             declaration_text_input,
             {
                 "incident_date": incident_date.strip(),
                 "claim_amount": claim_amount.strip(),
-                **declaration_answers,
+                "items": items,
             },
         )
-        st.text_area(
-            "Declaration draft",
-            value=declaration_text,
-            height=260,
-            disabled=True,
-        )
-        damages_calc = st.text_area(
-            "How Damages Are Calculated",
-            placeholder=(
-                "Itemize property value + emotional distress. "
-                "Leave blank to auto-fill from description above."
-            ),
-            height=80,
-        )
+        st.session_state["declaration_text"] = declaration_text
 
-        # ── Items ──────────────────────────────────────────────────────────
-        st.divider()
-        st.subheader("Itemized Property")
-        items_df = st.data_editor(
-            pd.DataFrame({"Description": ["", "", ""], "Value ($)": ["", "", ""]}),
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "Description": st.column_config.TextColumn(width="large"),
-                "Value ($)":   st.column_config.TextColumn(width="small"),
-            },
-            hide_index=True,
-        )
+    declaration_text = st.session_state.get("declaration_text", "")
+    st.text_area(
+        "Declaration draft",
+        value=declaration_text or "Press the button above to generate a court-style declaration.",
+        height=260,
+    )
+    damages_calc = st.text_area(
+        "How Damages Are Calculated",
+        placeholder=(
+            "Itemize property value + emotional distress. "
+            "Leave blank to auto-fill from description above."
+        ),
+        height=80,
+    )
 
-        # ── Additional Defendants (SC-100A) ─────────────────────────────────
-        st.divider()
-        st.subheader("Additional Defendants (optional)")
-        defs_df = st.data_editor(
-            pd.DataFrame({"Name": [""], "Street": [""], "City": [""], "State": ["CA"], "ZIP": [""], "Phone": [""], "Mailing": [""], "Job Title": [""]}),
-            num_rows="dynamic",
-            use_container_width=True,
-            hide_index=True,
-        )
+    # ── Additional Defendants (SC-100A) ─────────────────────────────────
+    st.divider()
+    st.subheader("Additional Defendants (optional)")
+    defs_df = st.data_editor(
+        pd.DataFrame({"Name": [""], "Street": [""], "City": [""], "State": ["CA"], "ZIP": [""], "Phone": [""], "Mailing": [""], "Job Title": [""]}),
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+    )
 
-        # ── Fee Waiver ─────────────────────────────────────────────────────
-        st.divider()
-        st.subheader("Fee Waiver")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            fw_basis = st.radio(
-                "Basis",
-                ["5c — Cannot afford fees", "5a — Public benefits", "5b — Income below threshold"],
-                help="5c is correct for most encampment sweep clients.",
-            )
-            st.markdown("**Public benefits:**")
-            recv_medi_cal = st.checkbox("Medi-Cal")
-            recv_snap     = st.checkbox("CalFresh / SNAP")
-            recv_calworks = st.checkbox("CalWORKS")
-        with c2:
-            income_source = st.text_input("Income Source", placeholder="General Assistance, SSI…")
-            income_amount = st.text_input("Monthly Income ($)", placeholder="400")
-            total_income  = st.text_input("Total Monthly Income ($)", placeholder="400")
-        with c3:
-            exp_food      = st.text_input("Food / Supplies ($)", value="0")
-            exp_medical   = st.text_input("Medical / Dental ($)", value="0")
-            exp_transport = st.text_input("Transportation ($)", value="0")
-            exp_housing   = st.text_input("Housing ($)", value="0")
-            total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300")
+    # ── Subpoena (SC-107) ──────────────────────────────────────────────
+    st.divider()
+    st.subheader("Subpoena Request (SC-107)")
+    st.caption(
+        "What documents would you like subpoenaed for your case? "
+        "Check any that apply, and add your own below. Leave blank to skip."
+    )
+    _default_requests = [
+        "All body-worn camera, dashboard camera, and other video or audio recordings from the sweep.",
+        "All incident reports, field notes, supplemental reports, and emails by officers involved.",
+        "All dispatch logs, radio transmissions, and 911/311 call recordings for the incident.",
+        "All complaints, investigations, internal affairs files, and disciplinary records for involved officers.",
+        "All policies, training materials, written directives, and encampment sweep protocols.",
+        "All property seizure, storage, chain-of-custody, and disposal records.",
+        "All internal communications, memos, and coordination records between police, DPW, and other City agencies.",
+        "All surveillance camera and private video footage from the sweep location.",
+        "All records authorizing, scheduling, or directing the sweep.",
+    ]
+    subpoena_checks = {}
+    for req in _default_requests:
+        subpoena_checks[req] = st.checkbox(req, value=True)
+    sub_to = st.text_input(
+        "Agency or person to subpoena",
+        placeholder="Oakland Police Department Records Division",
+    )
+    sub_service = st.text_input(
+        "Service address for the subpoena",
+        placeholder="1515 Clay St, Oakland CA 94612",
+    )
+    sub_custodian = st.text_input(
+        "Custodian of records",
+        placeholder="Records Division",
+    )
+    sub_extra = st.text_area(
+        "Any additional documents to request (one per line)",
+        placeholder="Any other records or documents…",
+        height=80,
+    )
 
-        submitted = st.form_submit_button(
-            "Generate Forms", type="primary", width="stretch"
+    # ── Fee Waiver ─────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Fee Waiver")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        fw_basis = st.radio(
+            "Basis",
+            ["5c — Cannot afford fees", "5a — Public benefits", "5b — Income below threshold"],
+            help="5c is correct for most encampment sweep clients.",
         )
+        st.markdown("**Public benefits:**")
+        recv_medi_cal = st.checkbox("Medi-Cal")
+        recv_snap     = st.checkbox("CalFresh / SNAP")
+        recv_calworks = st.checkbox("CalWORKS")
+    with c2:
+        income_source = st.text_input("Income Source", placeholder="General Assistance, SSI…")
+        income_amount = st.text_input("Monthly Income ($)", placeholder="400")
+        total_income  = st.text_input("Total Monthly Income ($)", placeholder="400")
+    with c3:
+        exp_food      = st.text_input("Food / Supplies ($)", value="0")
+        exp_medical   = st.text_input("Medical / Dental ($)", value="0")
+        exp_transport = st.text_input("Transportation ($)", value="0")
+        exp_housing   = st.text_input("Housing ($)", value="0")
+        total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300")
+
+    submitted = st.button(
+        "Generate Forms", type="primary", use_container_width=True
+    )
 
     st.download_button(
         "⬇️ Download declaration as Word document",
@@ -908,11 +933,16 @@ with tab_manual:
 
     # ── Handle submission ──────────────────────────────────────────────────
     if submitted:
-        items = [
-            {"description": str(r["Description"]).strip(), "value": str(r["Value ($)"]).strip()}
-            for _, r in items_df.iterrows()
-            if str(r["Description"]).strip()
-        ]
+        items = []
+        for _, r in items_df.iterrows():
+            description = str(r.get("Description", "")).strip()
+            if not description:
+                continue
+            items.append({
+                "description": description,
+                "value": str(r.get("Value ($)", "")).strip(),
+                "condition": str(r.get("Condition", "")).strip() or "Unknown",
+            })
         basis_code = fw_basis.split(" — ")[0].strip()
 
         if manual_def is not None:
@@ -977,11 +1007,14 @@ with tab_manual:
                 "content":        declaration_text.strip() or claim_reason.strip(),
             },
             "subpoena": {
-                "case_caption":     "",
-                "to":               "",
-                "custodian":        "",
-                "service_location": "",
-                "requests":         ["", "", "", "", "", "", "", "", "", ""],
+                "case_caption":     f"{name.strip()} v. City of Oakland",
+                "to":               sub_to.strip(),
+                "custodian":        sub_custodian.strip(),
+                "service_location": sub_service.strip(),
+                "requests": (
+                    [r for r, checked in subpoena_checks.items() if checked]
+                    + [line.strip() for line in sub_extra.splitlines() if line.strip()]
+                )[:10],
             },
         }
 
@@ -1305,38 +1338,4 @@ with tab_sheet:
                     with st.expander(f"Error — {pname}"):
                         st.text(err)
 
-with tab_sc107:
-    st.subheader("SC-107 Subpoena Helper")
-    st.markdown(
-        "Use this section to generate SC-107 subpoena request language and to download "
-        "a helper CSV for subpoenas in lawsuits against police for destroying homeless "
-        "encampments."
-    )
 
-    st.markdown("#### SC-107 spreadsheet helper fields")
-    sc107_df = pd.DataFrame(
-        _SC107_TEMPLATE_COLS,
-        columns=["Spreadsheet Column", "Description", "Example"],
-    )
-    st.dataframe(sc107_df, use_container_width=True, hide_index=True)
-
-    st.download_button(
-        "📥 Download SC-107 helper CSV",
-        data=_sc107_csv_template_bytes(),
-        file_name="sc107_subpoena_helper.csv",
-        mime="text/csv",
-        type="secondary",
-        width="stretch",
-    )
-
-    st.markdown("#### Suggested subpoena request categories")
-    st.markdown(
-        "- Body-worn camera, dashboard camera, and other video/audio recordings "
-        "from the sweep.\n"
-        "- Incident reports, field notes, supplemental reports, and emails by officers.\n"
-        "- Dispatch logs, radio transmissions, and 911/311 call recordings.\n"
-        "- Complaints, investigations, internal affairs files, and disciplinary history for involved officers.\n"
-        "- Policies, training materials, written directives, and encampment sweep protocols.\n"
-        "- Property seizure, storage, chain-of-custody, and disposal records.\n"
-        "- All internal communications, memos, and coordination records between police, DPW, and other City agencies."
-    )
