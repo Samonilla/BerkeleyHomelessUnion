@@ -751,19 +751,57 @@ def _court_selector(key_prefix: str, default_county: str = "Alameda") -> dict:
         "zip":     chosen["zip"],
     }
 
-def _defendant_selector(key_prefix: str, default_city: str = "Oakland") -> dict | None:
-    """Dropdown of all CA municipalities. Returns defendant dict or None for custom entry."""
-    city_options = ["— Custom (enter below) —"] + ALL_CITIES
+_SELECTOR_MANUAL = "🏘️ Unincorporated area / Other (enter manually)"
+
+
+def _defendant_selector(key_prefix: str, default_city: str = "Oakland") -> dict:
+    """Dropdown of all CA municipalities + manual entry for unincorporated areas.
+    Always returns a fully-populated defendant dict.
+    """
+    city_options = [_SELECTOR_MANUAL] + ALL_CITIES
     default_idx = ALL_CITIES.index(default_city) + 1 if default_city in ALL_CITIES else 1
     selected = st.selectbox(
         "Defendant City / Municipality *",
         city_options,
         index=default_idx,
         key=f"{key_prefix}_def_city",
-        help="Select the California city or town being sued. For county agencies use Custom.",
+        help=(
+            "Select the California city or town being sued. "
+            "For unincorporated county areas, county agencies, or any other entity, "
+            "choose 'Unincorporated area / Other' to enter all fields manually."
+        ),
     )
-    if selected == "— Custom (enter below) —":
-        return None
+    if selected == _SELECTOR_MANUAL:
+        st.caption("Enter the defendant's information manually.")
+        c1, c2 = st.columns(2)
+        with c1:
+            name_v  = st.text_input("Defendant Name *",    placeholder="County of Alameda", key=f"{key_prefix}_cust_name")
+            str_v   = st.text_input("Street Address",       placeholder="1221 Oak St",       key=f"{key_prefix}_cust_street")
+            city_v  = st.text_input("City",                 placeholder="Oakland",           key=f"{key_prefix}_cust_city")
+            s1, s2  = st.columns(2)
+            with s1:
+                state_v = st.text_input("State", value="CA",          key=f"{key_prefix}_cust_state")
+            with s2:
+                zip_v   = st.text_input("ZIP",   placeholder="94612", key=f"{key_prefix}_cust_zip")
+        with c2:
+            agent_name_v   = st.text_input("Agent for Service",  value="Clerk",         key=f"{key_prefix}_cust_agent_name")
+            agent_title_v  = st.text_input("Agent Title",        value="County Clerk",  key=f"{key_prefix}_cust_agent_title")
+            agent_str_v    = st.text_input("Agent Street",       placeholder="1221 Oak St", key=f"{key_prefix}_cust_agent_street")
+            agent_city_v   = st.text_input("Agent City",         placeholder="Oakland",     key=f"{key_prefix}_cust_agent_city")
+            agent_zip_v    = st.text_input("Agent ZIP",          placeholder="94612",       key=f"{key_prefix}_cust_agent_zip")
+        return {
+            "name":          name_v.strip(),
+            "address":       str_v.strip(),
+            "city":          city_v.strip(),
+            "state":         state_v.strip() or "CA",
+            "zip":           zip_v.strip(),
+            "agent_name":    agent_name_v.strip() or "Clerk",
+            "agent_title":   agent_title_v.strip() or "County Clerk",
+            "agent_address": agent_str_v.strip(),
+            "agent_city":    agent_city_v.strip(),
+            "agent_state":   "CA",
+            "agent_zip":     agent_zip_v.strip(),
+        }
     d = defendant_info(selected)
     st.caption(
         f"**{d['name']}** · {d['address']}, {d['city']}, CA {d['zip']} "
@@ -772,7 +810,7 @@ def _defendant_selector(key_prefix: str, default_city: str = "Oakland") -> dict 
     return d
 
 
-_CUSTOM_DEFENDANT = "✏️ Enter your own defendant"
+_CUSTOM_DEFENDANT = "🏘️ Unincorporated area / Other (enter manually)"
 
 
 def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
@@ -791,8 +829,8 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
         key=f"{key_prefix}_def{def_id}_city_sel",
         help=(
             "Select the California city or town being sued, or choose "
-            "'Enter your own defendant' for a person, county agency, or other entity. "
-            "All fields below stay editable."
+            "'Unincorporated area / Other' for residents of unincorporated county areas, "
+            "county agencies, or any other entity. All fields below stay editable."
         ),
     )
     if selected == _CUSTOM_DEFENDANT:
@@ -1521,10 +1559,9 @@ with tab_sheet:
             )
 
         if run_batch:
-            _batch_defendant = batch_def if batch_def is not None else DEFENDANT_DEFAULTS["city_of_oakland"]
             defaults = {
                 "court":                 batch_court,
-                "defendant":             _batch_defendant,
+                "defendant":             batch_def,
                 "filing_date":           b_filing_date.strip(),
                 "govt_claim_filed_date": b_govt_claim_date.strip(),
                 "claim_amount":          b_claim_amount.strip(),
