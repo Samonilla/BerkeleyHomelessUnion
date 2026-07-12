@@ -958,7 +958,18 @@ with tab_manual:
     st.subheader("Incident & Claim")
     c1, c2 = st.columns(2)
     with c1:
-        incident_date     = st.text_input("Date of Sweep *", placeholder="MM/DD/YYYY")
+        _date_range = st.checkbox("Date range / multi-day incident", key="manual_date_range")
+        if _date_range:
+            _dc1, _dc2 = st.columns(2)
+            with _dc1:
+                _date_start = st.text_input("Start Date *", placeholder="MM/DD/YYYY", key="manual_date_start")
+            with _dc2:
+                _date_end = st.text_input("End Date *", placeholder="MM/DD/YYYY", key="manual_date_end")
+            incident_date = _date_start.strip()
+            if _date_end.strip():
+                incident_date = f"{incident_date} – {_date_end.strip()}" if incident_date else _date_end.strip()
+        else:
+            incident_date = st.text_input("Date of Sweep *", placeholder="MM/DD/YYYY", key="manual_date_single")
         incident_location = st.text_input(
             "Location of Sweep",
             placeholder="E.g. E 12th St & 16th Ave underpass, Oakland",
