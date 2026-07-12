@@ -255,6 +255,7 @@ _DATA = {
     'Manteca': ('City of Manteca', '1001 West Center Street', 'Manteca', '95337', 'City Clerk'),
     'Maricopa': ('City of Maricopa', '100 East California Avenue', 'Maricopa', '93252', 'City Clerk'),
     'Marina': ('City of Marina', '211 Hillcrest Avenue', 'Marina', '93933', 'City Clerk'),
+    'Marin County': ('County of Marin', '3501 Civic Center Drive', 'San Rafael', '94903', 'County Clerk'),
     'Martinez': ('City of Martinez', '525 Henrietta Street', 'Martinez', '94553', 'City Clerk'),
     'Marysville': ('City of Marysville', '526 C Street', 'Marysville', '95901', 'City Clerk'),
     'Maywood': ('City of Maywood', '4319 East Slauson Avenue', 'Maywood', '90270', 'City Clerk'),
