@@ -1504,7 +1504,7 @@ with tab_sheet:
         st.markdown("**Defendant**")
         batch_def = _defendant_selector("batch")
 
-        with st.form("batch_defaults_form", border=True):
+        with st.container(border=True):
             d1, d2 = st.columns(2)
             with d1:
                 b_filing_date      = st.text_input("Filing Date *", placeholder="MM/DD/YYYY",
@@ -1554,8 +1554,8 @@ with tab_sheet:
                 height=80,
             )
 
-            run_batch = st.form_submit_button(
-                "Generate All Forms", type="primary", width="stretch"
+            run_batch = st.button(
+                "Generate All Forms", type="primary", use_container_width=True
             )
 
         if run_batch:
