@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import io
 import json
+import os
 import re
 import secrets
 import sys
@@ -30,7 +31,41 @@ import streamlit as st
 from dateutil import parser as _dateutil
 
 HERE = Path(__file__).parent
-CASES_DIR = HERE / "cases"
+_DEFAULT_CASES_DIR = HERE / "cases"
+
+
+def _case_dirs() -> list[Path]:
+    """Return case-storage dirs in read priority order.
+
+    BHU_CASES_DIR can point intake/admin to a shared persistent folder.
+    Legacy/default paths are also scanned so older records still appear.
+    """
+    env_dir = (os.environ.get("BHU_CASES_DIR") or "").strip()
+    candidates = [
+        Path(env_dir).expanduser() if env_dir else _DEFAULT_CASES_DIR,
+        _DEFAULT_CASES_DIR,
+        HERE.parent / "cases",
+        Path("/mount/data/bhu_cases"),
+        Path("/mount/src/berkeleyhomelessunion/cases"),
+        Path("/mount/src/berkeleyhomelessunion/smallclaims/cases"),
+    ]
+    uniq = []
+    seen = set()
+    for p in candidates:
+        k = str(p)
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(p)
+    return uniq
+
+
+def _primary_cases_dir() -> Path:
+    return _case_dirs()[0]
+
+
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_") or "case"
 
 sys.path.insert(0, str(HERE))
 from fill_forms import (  # noqa: E402
@@ -74,26 +109,63 @@ def _parse_date(s):
 
 def load_cases() -> list:
     """Load every intake record in cases/. Returns [(path, case_dict)]."""
-    out = []
-    if not CASES_DIR.exists():
-        return out
-    for path in sorted(CASES_DIR.glob("*.json")):
-        if path.name.startswith(("sample", "_")):
-            continue  # templates / examples, not real intakes
-        try:
-            with open(path) as f:
-                case = json.load(f)
-        except Exception:
+    by_key = {}
+    for d in _case_dirs():
+        if not d.exists():
             continue
-        if not isinstance(case, dict) or not (case.get("plaintiff") or {}).get("name"):
-            continue
-        out.append((path, case))
-    return out
+        for path in sorted(d.glob("*.json")):
+            if path.name.startswith(("sample", "_")):
+                continue  # templates / examples, not real intakes
+            try:
+                with open(path) as f:
+                    case = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(case, dict) or not (case.get("plaintiff") or {}).get("name"):
+                continue
+            key = (
+                str(case.get("internal_case_number") or "").strip(),
+                str((case.get("plaintiff") or {}).get("name") or "").strip().lower(),
+            )
+            prev = by_key.get(key)
+            if not prev:
+                by_key[key] = (path, case)
+                continue
+            if str(case.get("captured_at") or "") > str((prev[1] or {}).get("captured_at") or ""):
+                by_key[key] = (path, case)
+    return list(by_key.values())
 
 
 def save_case(path: Path, case: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(case, f, indent=2)
+
+
+def import_case_json(raw: bytes, source_name: str = "upload") -> tuple[bool, str]:
+    """Import one case JSON into the primary cases directory."""
+    try:
+        case = json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        return False, f"{source_name}: invalid JSON ({e})"
+
+    if not isinstance(case, dict):
+        return False, f"{source_name}: top-level JSON must be an object"
+
+    name = str((case.get("plaintiff") or {}).get("name") or "").strip()
+    if not name:
+        return False, f"{source_name}: missing plaintiff.name"
+
+    icn = str(case.get("internal_case_number") or "").strip() or f"{datetime.now():%Y%m%d}-IMP"
+    case["internal_case_number"] = icn
+    if not case.get("captured_at"):
+        case["captured_at"] = datetime.now().isoformat(timespec="seconds")
+
+    out = _primary_cases_dir()
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{icn}_{_slug(name)}.json"
+    save_case(path, case)
+    return True, f"Imported {name} -> {path.name}"
 
 
 def generate_packet(case: dict):
@@ -315,6 +387,29 @@ with st.sidebar:
                     _users[me].update({"salt": salt, "hash": digest})
                     _save_users(_users)
                     st.success("Password changed.")
+
+    with st.expander("Import case JSON files"):
+        st.caption("Upload JSON files exported from the intake app (Save Case Data).")
+        st.caption("Reading from: " + " | ".join(str(p) for p in _case_dirs()))
+        files = st.file_uploader(
+            "Case JSON files",
+            type=["json"],
+            accept_multiple_files=True,
+            key="admin_case_import",
+        )
+        if files and st.button("Import uploaded files", use_container_width=True):
+            ok_count, err_count = 0, 0
+            for f in files:
+                ok, msg = import_case_json(f.getvalue(), f.name)
+                if ok:
+                    ok_count += 1
+                    st.success(msg)
+                else:
+                    err_count += 1
+                    st.error(msg)
+            st.info(f"Imported: {ok_count} · Errors: {err_count}")
+            if ok_count:
+                st.rerun()
 
 st.title("📋 Berkeley Homeless Union — Officer Case Tracker")
 st.caption(

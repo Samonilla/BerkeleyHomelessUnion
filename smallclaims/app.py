@@ -45,7 +45,37 @@ def _slug(name: str) -> str:
 
 # ─── Internal case numbers & intake capture ───────────────────────────────────
 
-_CASES_DIR = HERE / "cases"
+_DEFAULT_CASES_DIR = HERE / "cases"
+
+
+def _case_dirs() -> list[Path]:
+    """Return case-storage dirs in read priority order.
+
+    BHU_CASES_DIR can point intake/admin to a shared persistent folder.
+    Legacy/default paths are also scanned so older records still appear.
+    """
+    env_dir = (os.environ.get("BHU_CASES_DIR") or "").strip()
+    candidates = [
+        Path(env_dir).expanduser() if env_dir else _DEFAULT_CASES_DIR,
+        _DEFAULT_CASES_DIR,
+        HERE.parent / "cases",
+        Path("/mount/data/bhu_cases"),
+        Path("/mount/src/berkeleyhomelessunion/cases"),
+        Path("/mount/src/berkeleyhomelessunion/smallclaims/cases"),
+    ]
+    uniq = []
+    seen = set()
+    for p in candidates:
+        k = str(p)
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(p)
+    return uniq
+
+
+def _primary_cases_dir() -> Path:
+    return _case_dirs()[0]
 
 
 def _internal_case_number(full_name: str) -> str:
@@ -71,8 +101,9 @@ def _capture_case_record(case: dict) -> str:
     num = case.get("internal_case_number") or _internal_case_number(pname)
     case["internal_case_number"] = num
     record = {**case, "captured_at": datetime.now().isoformat(timespec="seconds")}
-    _CASES_DIR.mkdir(exist_ok=True)
-    with open(_CASES_DIR / f"{num}_{_slug(pname)}.json", "w") as f:
+    out_dir = _primary_cases_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with open(out_dir / f"{num}_{_slug(pname)}.json", "w") as f:
         json.dump(record, f, indent=2)
     return num
 
@@ -913,17 +944,30 @@ def _admin_url() -> str:
 
 
 def _load_case_records() -> list:
-    records = []
-    for path in sorted(_CASES_DIR.glob("*.json")):
-        if path.name.startswith(("sample", "_")):
+    by_key = {}
+    for d in _case_dirs():
+        if not d.exists():
             continue
-        try:
-            c = json.loads(path.read_text())
-        except Exception:
-            continue
-        if (c.get("plaintiff") or {}).get("name"):
-            records.append(c)
-    return records
+        for path in sorted(d.glob("*.json")):
+            if path.name.startswith(("sample", "_")):
+                continue
+            try:
+                c = json.loads(path.read_text())
+            except Exception:
+                continue
+            if not (c.get("plaintiff") or {}).get("name"):
+                continue
+            key = (
+                str(c.get("internal_case_number") or "").strip(),
+                str((c.get("plaintiff") or {}).get("name") or "").strip().lower(),
+            )
+            prev = by_key.get(key)
+            if not prev:
+                by_key[key] = c
+                continue
+            if str(c.get("captured_at") or "") > str(prev.get("captured_at") or ""):
+                by_key[key] = c
+    return list(by_key.values())
 
 
 def _render_admin_portal(user: str) -> None:
