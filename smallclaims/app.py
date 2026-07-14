@@ -926,10 +926,27 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# Match the main BHU site: serif headers, gold accents on black
+st.markdown(
+    """
+    <style>
+    h1, h2, h3 { font-family: Georgia, 'Times New Roman', serif !important; }
+    h1 { color: #FFC700 !important; }
+    div[data-testid="stMetricValue"] { color: #FFC700; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ─── Officer sign-in (top right) & data portal ────────────────────────────────
 
 from accounts import (
     add_user as _acct_add, load_users as _acct_load, verify_login as _acct_verify,
+)
+
+
+_MEDIA_TRACKER_URL = os.environ.get(
+    "BHU_MEDIA_TRACKER_URL", "https://bhu-media-tracker.vercel.app"
 )
 
 
@@ -970,6 +987,63 @@ def _load_case_records() -> list:
     return list(by_key.values())
 
 
+def _portal_date(s):
+    s = (str(s) if s is not None else "").strip()
+    if not s:
+        return None
+    try:
+        return _dateutil.parse(s, dayfirst=False).date()
+    except Exception:
+        return None
+
+
+def _case_stage(c: dict) -> str:
+    """Where this member is in the pipeline: draft → forms → filed."""
+    status = (c.get("tracking") or {}).get("status", "Intake")
+    if (c.get("lawsuit") or {}).get("filed_on") or status.startswith(
+        ("Lawsuit", "Trial", "Resolved", "Closed")
+    ):
+        return "⚖️ Filed"
+    if c.get("forms_generated_at"):
+        return "📄 Forms generated"
+    return "📝 Draft"
+
+
+def _case_alerts(c: dict):
+    """(flag, detail) — same deadline rules as the case tracker."""
+    from datetime import timedelta
+
+    today = datetime.now().date()
+    cl = c.get("claim") or {}
+    status = (c.get("tracking") or {}).get("status", "Intake")
+
+    incident = _portal_date(cl.get("incident_date"))
+    if status == "Intake" and incident:
+        left = (incident + timedelta(days=182) - today).days
+        if left < 0:
+            return "🔴", f"Govt claim window passed {-left}d ago"
+        if left <= 30:
+            return "🟠", f"{left}d left to file govt claim"
+
+    claim_filed = _portal_date(cl.get("govt_claim_filed_date"))
+    if status == "Govt Claim Filed" and claim_filed:
+        over = (today - (claim_filed + timedelta(days=45))).days
+        if over >= 0:
+            return "🟢", "45 days passed — can file lawsuit now"
+        if over >= -7:
+            return "🟡", f"45-day mark in {-over}d"
+
+    if not status.startswith(("Resolved", "Closed")):
+        trial = _portal_date((c.get("lawsuit") or {}).get("trial_date"))
+        if trial:
+            days = (trial - today).days
+            if days == 0:
+                return "🔵", "Trial TODAY"
+            if 0 < days <= 14:
+                return "🔵", f"Trial in {days}d"
+    return "", ""
+
+
 def _render_admin_portal(user: str) -> None:
     """Signed-in officers see the collected data instead of the intake form."""
     st.header("📋 Officer Data Portal")
@@ -1005,7 +1079,70 @@ def _render_admin_portal(user: str) -> None:
     m3.metric("Total claimed", f"${_total:,.0f}")
     st.divider()
 
-    tab_people, tab_csv = st.tabs(["👥 Claimants", "📊 Data (CSV)"])
+    tab_today, tab_people, tab_csv, tab_media = st.tabs(
+        ["🏠 Today", "👥 Members", "📊 Data (CSV)", "📰 Media Tracker"]
+    )
+
+    with tab_today:
+        st.subheader("⚠️ Needs attention")
+        flagged = []
+        for c in records:
+            fl, detail = _case_alerts(c)
+            if fl:
+                flagged.append((fl, detail, c))
+        if not flagged:
+            st.success(
+                "Nothing urgent — no claim windows closing, no 45-day marks, "
+                "no trials in the next two weeks."
+            )
+        for fl, detail, c in flagged:
+            p = c.get("plaintiff") or {}
+            r1, r2 = st.columns([4, 1])
+            with r1:
+                st.markdown(
+                    f"{fl} **{p.get('name', '')}** "
+                    f"({c.get('internal_case_number', '—')}) — {detail}"
+                )
+            with r2:
+                if (p.get("phone") or "").strip():
+                    st.markdown(f"[📞 {p['phone']}](tel:{p['phone']})")
+
+        st.divider()
+        st.subheader("📅 Upcoming trials")
+        today_d = datetime.now().date()
+        trials = sorted(
+            ((_portal_date((c.get("lawsuit") or {}).get("trial_date")), c) for c in records),
+            key=lambda x: x[0] or today_d,
+        )
+        trials = [(d_, c) for d_, c in trials if d_ and d_ >= today_d][:8]
+        if trials:
+            for d_, c in trials:
+                p = c.get("plaintiff") or {}
+                lw = c.get("lawsuit") or {}
+                st.markdown(
+                    f"**{d_:%a, %b %d}** — {p.get('name', '')} v. "
+                    f"{(c.get('defendant') or {}).get('name', '—')} · "
+                    f"Dept {lw.get('department') or '—'} · "
+                    f"{c.get('case_number') or 'no case # yet'}"
+                )
+        else:
+            st.caption("No trials scheduled.")
+
+        st.divider()
+        st.subheader("🆕 Recent activity")
+        def _last_touch(c):
+            return max(
+                c.get("captured_at") or "",
+                (c.get("tracking") or {}).get("updated_at") or "",
+                c.get("forms_generated_at") or "",
+            )
+        for c in sorted(records, key=_last_touch, reverse=True)[:6]:
+            p = c.get("plaintiff") or {}
+            st.markdown(
+                f"{_case_stage(c)} · **{p.get('name', '')}** "
+                f"({c.get('internal_case_number', '—')}) · "
+                f"last activity {(_last_touch(c) or '—')[:16].replace('T', ' ')}"
+            )
 
     with tab_people:
         for c in records:
@@ -1016,7 +1153,7 @@ def _render_admin_portal(user: str) -> None:
             lw = c.get("lawsuit") or {}
             label = (
                 f"**{c.get('internal_case_number', '—')}** · {p.get('name', '')} "
-                f"· {t.get('status', 'Intake')} · ${cl.get('amount', '—')}"
+                f"· {_case_stage(c)} · {t.get('status', 'Intake')} · ${cl.get('amount', '—')}"
             )
             with st.expander(label):
                 a, b = st.columns(2)
@@ -1092,6 +1229,22 @@ def _render_admin_portal(user: str) -> None:
             mime="text/csv",
             use_container_width=True,
         )
+
+    with tab_media:
+        _mc1, _mc2 = st.columns([4, 1])
+        with _mc1:
+            st.caption(
+                "BHU Media Coverage Tracker — homelessness & street vendor "
+                "coverage in Berkeley/Oakland. Updates automatically every "
+                "morning."
+            )
+        with _mc2:
+            st.link_button("↗ Full screen", _MEDIA_TRACKER_URL, use_container_width=True)
+        try:
+            from streamlit.components.v1 import iframe as _iframe
+            _iframe(_MEDIA_TRACKER_URL, height=1200, scrolling=True)
+        except Exception:
+            st.info(f"Couldn't embed the tracker — open it directly: {_MEDIA_TRACKER_URL}")
 
 
 _pop = st.popover if hasattr(st, "popover") else (lambda label, **_k: st.expander(label))
@@ -1739,6 +1892,13 @@ with tab_manual:
         else:
             try:
                 pdfs = _generate_pdfs(case)
+                # Record that this member has generated their forms (stage
+                # tracking in the officer portal) and refresh the record.
+                case["forms_generated_at"] = datetime.now().isoformat(timespec="seconds")
+                try:
+                    _capture_case_record(case)
+                except Exception:
+                    pass
                 _show_downloads(pdfs, _slug(name.strip()))
                 st.download_button(
                     "💾  Save Case Data (JSON)",

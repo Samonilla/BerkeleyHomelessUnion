@@ -1,0 +1,8 @@
+# Berkeley Homeless Union site theme — black & gold, serif
+[theme]
+base = "dark"
+primaryColor = "#FFC700"
+backgroundColor = "#080808"
+secondaryBackgroundColor = "#141414"
+textColor = "#F5EFDC"
+font = "serif"
