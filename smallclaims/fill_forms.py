@@ -15,8 +15,17 @@ import os
 import re
 import argparse
 from pathlib import Path
-from pypdf import PdfReader, PdfWriter
-from pypdf.generic import NameObject, BooleanObject, DictionaryObject
+
+try:
+    from pypdf import PdfReader, PdfWriter
+except Exception:
+    # Compatibility fallback for environments that still provide PyPDF2.
+    from PyPDF2 import PdfReader, PdfWriter  # type: ignore
+
+try:
+    from pypdf.generic import NameObject, BooleanObject, DictionaryObject
+except Exception:
+    NameObject = BooleanObject = DictionaryObject = None
 
 # Optional: flatten PDFs to ensure appearances are rendered in all viewers.
 def _flatten_pdf(path: str, scale: float = 2.0) -> None:
@@ -190,21 +199,39 @@ def _write_pdf(template_path, output_path, values):
     # is opened or saved elsewhere.
     try:
         root = writer._root_object
-        # Set the AcroForm /NeedAppearances flag so PDF viewers render filled fields
-        try:
-            acro = root.get(NameObject("/AcroForm")) if hasattr(root, 'get') else root[NameObject("/AcroForm")] if NameObject("/AcroForm") in root else None
-        except Exception:
-            acro = None
-
-        if acro is None:
-            root.update({NameObject("/AcroForm"): DictionaryObject({NameObject("/NeedAppearances"): BooleanObject(True)})})
-        else:
+        # Set the AcroForm /NeedAppearances flag so PDF viewers render filled fields.
+        # Use generic PDF object wrappers when available, otherwise fall back to
+        # plain keys for broader compatibility across pypdf/PyPDF2 variants.
+        if NameObject and BooleanObject and DictionaryObject:
             try:
-                acro.update({NameObject("/NeedAppearances"): BooleanObject(True)})
+                acro = root.get(NameObject("/AcroForm")) if hasattr(root, "get") else None
             except Exception:
-                root.update({NameObject("/AcroForm"): DictionaryObject({NameObject("/NeedAppearances"): BooleanObject(True)})})
+                acro = None
+
+            if acro is None:
+                root.update({
+                    NameObject("/AcroForm"): DictionaryObject({
+                        NameObject("/NeedAppearances"): BooleanObject(True)
+                    })
+                })
+            else:
+                try:
+                    acro.update({NameObject("/NeedAppearances"): BooleanObject(True)})
+                except Exception:
+                    root.update({
+                        NameObject("/AcroForm"): DictionaryObject({
+                            NameObject("/NeedAppearances"): BooleanObject(True)
+                        })
+                    })
+        else:
+            acro = root.get("/AcroForm") if hasattr(root, "get") else None
+            if acro is not None and hasattr(acro, "update"):
+                try:
+                    acro.update({"/NeedAppearances": True})
+                except Exception:
+                    pass
     except Exception:
-        # Non-fatal: continue writing even if we can't set the flag
+        # Non-fatal: continue writing even if we can't set the flag.
         pass
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
