@@ -19,7 +19,7 @@ import streamlit as st
 st.set_page_config(page_title="BHU Media Tracker", page_icon="📰", layout="wide")
 
 # Sanitized public feed (no contact info) published by the BHU media scanner.
-FEED = "https://bhu-media-tracker.vercel.app/public/data.json"
+FEED = "https://bhu-media-tracker.vercel.app/feed/data.json"
 
 
 @st.cache_data(ttl=1800, show_spinner="Loading coverage data…")
