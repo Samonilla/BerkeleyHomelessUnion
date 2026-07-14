@@ -79,7 +79,7 @@ for i in range(11, -1, -1):
         1 for a in articles
         if start < datetime.strptime(a["date"], "%Y-%m-%d").date() <= end
     ) if articles else 0
-    weeks.append({"week of": end.strftime("%b %d"), "stories": n})
+    weeks.append({"week of": pd.Timestamp(end), "stories": n})
 st.subheader("Stories found per week (last 12 weeks)")
 chart_df = pd.DataFrame(weeks).set_index("week of")
 st.bar_chart(chart_df, color="#2a78d6", height=200)
