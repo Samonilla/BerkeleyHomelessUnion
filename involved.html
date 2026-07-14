@@ -113,6 +113,11 @@
 
     @media (max-width: 900px) { .footer-grid { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 640px) { .nav-links { display: none; } .footer-grid { grid-template-columns: 1fr; gap: 2rem; } .involved-grid { grid-template-columns: 1fr; } .involved-card:nth-child(2n) { border-right: 1px solid var(--rule); } .cta-bar .container { flex-direction: column; align-items: stretch; } }
+    @media (max-width: 1500px) {
+      .nav-links { gap: 1.2rem; }
+      .nav-links li:last-child { display: none; }
+      .nav-logo-text { font-size: 0.72rem; letter-spacing: 0.1em; }
+    }
   </style>
 </head>
 <body>
@@ -130,7 +135,10 @@
         <li><a href="events.html">Events</a></li>
         <li><a href="smallclaims.html">Small Claims</a></li>
       </ul>
-      <a href="involved.html" class="nav-cta">Get Involved</a>
+      <div style="display:flex;align-items:center;gap:0.35rem;white-space:nowrap;">
+        <a href="involved.html" class="nav-cta" style="padding:0.45rem 0.75rem;font-size:0.64rem;">Get Involved</a>
+        <a href="https://berkeleyhomelessunion.streamlit.app" target="_blank" rel="noopener" class="nav-cta" style="padding:0.45rem 0.75rem;font-size:0.64rem;">Log In</a>
+      </div>
     </div>
   </nav>
 
