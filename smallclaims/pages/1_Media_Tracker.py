@@ -18,19 +18,19 @@ import streamlit as st
 
 st.set_page_config(page_title="BHU Media Tracker", page_icon="📰", layout="wide")
 
-RAW = "https://raw.githubusercontent.com/robbiepowelson-code/bhu-media-tracker/main/data/"
+# Sanitized public feed (no contact info) published by the BHU media scanner.
+FEED = "https://bhu-media-tracker.vercel.app/public/data.json"
 
 
 @st.cache_data(ttl=1800, show_spinner="Loading coverage data…")
-def load(name):
-    req = urllib.request.Request(RAW + name, headers={"User-Agent": "BHU-Streamlit/1.0"})
+def load():
+    req = urllib.request.Request(FEED, headers={"User-Agent": "BHU-Streamlit/1.0"})
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
 try:
-    coverage = load("coverage.json")
-    press = load("press_list.json")
+    data = load()
 except Exception:
     st.title("📰 Media Coverage Tracker")
     st.warning(
@@ -39,9 +39,9 @@ except Exception:
     )
     st.stop()
 
-articles = coverage.get("articles", [])
-contacts = press.get("contacts", [])
-removed = press.get("removed", [])
+articles = data.get("articles", [])
+contacts = data.get("reporters", [])
+removed = data.get("removed", [])
 
 st.title("📰 Media Coverage Tracker")
 st.caption(
