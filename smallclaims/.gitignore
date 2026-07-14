@@ -1,6 +1,7 @@
 output/
 cases/*.json
 !cases/sample_case.json
+admin_users.json
 __pycache__/
 *.py[cod]
 .venv/

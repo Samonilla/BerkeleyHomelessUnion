@@ -12,6 +12,7 @@ import re
 import sys
 import tempfile
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -24,7 +25,9 @@ sys.path.insert(0, str(HERE))
 
 from fill_forms import (
     fill_sc100, fill_fw001, fill_fw003, fill_sc112a, fill_sc150,
-    fill_sc105, fill_sc107, fill_sc100a_for_party, validate_case, DEFENDANT_DEFAULTS,
+    fill_sc105, fill_sc107, fill_sc109, fill_sc100a_for_party,
+    validate_case, has_postponement, DEFENDANT_DEFAULTS,
+    _SC107_DEFAULT_GOOD_CAUSE, _SC107_DEFAULT_MATERIALITY,
 )
 from courts import ALL_COUNTIES, courthouses_for_county, court_info_string
 from defendants import ALL_CITIES, defendant_info
@@ -38,6 +41,40 @@ _TPL = HERE / "templates"
 
 def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "case"
+
+
+# ─── Internal case numbers & intake capture ───────────────────────────────────
+
+_CASES_DIR = HERE / "cases"
+
+
+def _internal_case_number(full_name: str) -> str:
+    """Internal case number: creation date (YYYYMMDD) + the person's initials.
+
+    Example: Jane Doe entered on 2026-07-12 → 20260712-JD
+    """
+    initials = "".join(
+        w[0].upper() for w in re.split(r"\s+", (full_name or "").strip())
+        if w and w[0].isalpha()
+    )
+    return f"{datetime.now():%Y%m%d}-{initials or 'XX'}"
+
+
+def _capture_case_record(case: dict) -> str:
+    """Assign an internal case number and save the full intake to cases/.
+
+    Everything entered for the individual is written to
+    cases/<number>_<name>.json (re-capturing the same person on the same
+    day updates their record).
+    """
+    pname = (case.get("plaintiff") or {}).get("name", "")
+    num = case.get("internal_case_number") or _internal_case_number(pname)
+    case["internal_case_number"] = num
+    record = {**case, "captured_at": datetime.now().isoformat(timespec="seconds")}
+    _CASES_DIR.mkdir(exist_ok=True)
+    with open(_CASES_DIR / f"{num}_{_slug(pname)}.json", "w") as f:
+        json.dump(record, f, indent=2)
+    return num
 
 
 def _normalize_plain_language(text: str) -> str:
@@ -137,6 +174,21 @@ def _build_govt_claim_docx(data: dict) -> bytes:
     _row("8. Names of public employees or agencies causing the loss, if known",
          data.get("employees"))
 
+    items = data.get("items") or []
+    if items:
+        p = document.add_paragraph()
+        p.add_run("Itemized property destroyed or taken: ").bold = True
+        for item in items:
+            desc = str(item.get("description") or "").strip()
+            val = str(item.get("value") or "").replace("$", "").strip()
+            cond = str(item.get("condition") or "").strip()
+            line = f"– {desc}"
+            if cond:
+                line += f" (condition: {cond})"
+            if val:
+                line += f" — ${val}"
+            document.add_paragraph(line)
+
     amount_raw = (data.get("amount") or "").replace("$", "").replace(",", "").strip()
     try:
         amount_val = float(amount_raw)
@@ -168,6 +220,127 @@ def _build_govt_claim_docx(data: dict) -> bytes:
     buf = io.BytesIO()
     document.save(buf)
     return buf.getvalue()
+
+
+def _build_subpoena_attachments_docx(data: dict) -> bytes:
+    """Build a Word document containing only attachment pages for a subpoena."""
+    document = Document()
+    document.add_heading("Attachment to Small Claims Subpoena", level=1)
+
+    case_caption = (data.get("case_caption") or "").strip()
+    if case_caption:
+        document.add_paragraph(f"Case caption: {case_caption}")
+
+    document.add_paragraph(
+        "Attach these pages behind the subpoena as the list of documents and "
+        "records requested."
+    )
+
+    recipient = (data.get("to") or "").strip()
+    custodian = (data.get("custodian") or "").strip()
+    service_location = (data.get("service_location") or "").strip()
+
+    if recipient or custodian or service_location:
+        document.add_heading("Records Requested From", level=2)
+        if recipient:
+            document.add_paragraph(f"Person or agency: {recipient}")
+        if custodian:
+            document.add_paragraph(f"Custodian of records: {custodian}")
+        if service_location:
+            document.add_paragraph(f"Service address: {service_location}")
+
+    requests = [
+        str(request).strip() for request in (data.get("requests") or []) if str(request).strip()
+    ]
+    document.add_heading("Requested Documents and Things", level=2)
+    if requests:
+        for index, request in enumerate(requests, start=1):
+            document.add_paragraph(f"{index}. {request}")
+    else:
+        document.add_paragraph("No specific requests were listed.")
+
+    buf = io.BytesIO()
+    document.save(buf)
+    return buf.getvalue()
+
+
+# ─── Local jurisdiction claim form (uploaded PDF) auto-fill ──────────────────
+
+# Order matters: more specific patterns first (e.g. email before address,
+# incident date before generic date). Matched against field name + tooltip.
+_LOCAL_CLAIM_PATTERNS = [
+    ("claimant_email",    re.compile(r"e-?mail", re.I)),
+    ("claimant_phone",    re.compile(r"phone|telephone", re.I)),
+    ("claimant_name",     re.compile(r"(claimant|your|full|print|last|first).{0,20}name|name.{0,10}of.{0,10}claimant|^name\b", re.I)),
+    ("claimant_address",  re.compile(r"address", re.I)),
+    ("incident_date",     re.compile(
+        r"date.{0,30}(incident|occurr|loss|injur|accident|damage|event)"
+        r"|(incident|occurr|loss|injur|accident|damage|event).{0,30}date"
+        r"|when did", re.I)),
+    ("incident_location", re.compile(r"location|place|where", re.I)),
+    ("amount",            re.compile(r"amount|total.{0,15}claim|damages?\b", re.I)),
+    ("description",       re.compile(
+        r"describe|description|circumstance|what happened"
+        r"|how.{0,15}(occur|happen)|basis.{0,10}of|details|injury|damage|loss", re.I)),
+    ("employees",         re.compile(r"employee|officer|department|agency", re.I)),
+    ("date_signed",       re.compile(r"^date$|date.{0,10}(signed|of.{0,5}(this.{0,5})?claim)|dated", re.I)),
+]
+
+
+def _fill_uploaded_claim_pdf(pdf_bytes: bytes, data: dict):
+    """Best-effort fill of an uploaded local-jurisdiction claim form PDF.
+
+    Matches the PDF's fillable text fields (name + tooltip) against common
+    claim-form labels and fills what it can. Returns
+    (filled_pdf_bytes, matched {label: value}, unmatched [labels]).
+    Raises ValueError if the PDF has no fillable text fields.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject, BooleanObject, DictionaryObject
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    fields = reader.get_fields() or {}
+    text_fields = {k: v for k, v in fields.items() if v.get("/FT") == "/Tx"}
+    if not text_fields:
+        raise ValueError(
+            "This PDF has no fillable text fields — it is probably a scanned "
+            "or flattened form. Print it and copy your answers from the "
+            "generic claim form generated below."
+        )
+
+    values, matched, unmatched = {}, {}, []
+    for fname, f in text_fields.items():
+        label = str(f.get("/TU") or "").strip()
+        haystack = f"{fname} {label}"
+        for key, pattern in _LOCAL_CLAIM_PATTERNS:
+            val = (data.get(key) or "").strip()
+            if val and pattern.search(haystack):
+                values[fname] = val
+                matched[label or fname] = val
+                break
+        else:
+            unmatched.append(label or fname)
+
+    writer = PdfWriter()
+    writer.append(reader)
+    for page in writer.pages:
+        writer.update_page_form_field_values(page, values)
+    try:
+        root = writer._root_object
+        if NameObject("/AcroForm") in root:
+            root[NameObject("/AcroForm")].update(
+                {NameObject("/NeedAppearances"): BooleanObject(True)}
+            )
+        else:
+            root.update({NameObject("/AcroForm"): DictionaryObject(
+                {NameObject("/NeedAppearances"): BooleanObject(True)}
+            )})
+    except Exception:
+        pass
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue(), matched, unmatched
 
 
 _DEFAULT_SUBPOENA_REQUESTS = [
@@ -212,21 +385,25 @@ def _generate_pdfs(case: dict) -> dict:
             fill_sc112a(case, str(_TPL/"sc112a.pdf"), str(tmp/"sc112a.pdf"))
             result["SC-112A"] = (tmp/"sc112a.pdf").read_bytes()
 
-            # SC-150 form generation
-            try:
-                fill_sc150(case, str(_TPL/"sc150.pdf"), str(tmp/"sc150.pdf"))
-                result["SC-150"] = (tmp/"sc150.pdf").read_bytes()
-            except Exception:
-                # Handle SC-150 generation failure
-                pass
+            # SC-150 Request to Postpone Trial — only if postponement data present
+            if has_postponement(case):
+                try:
+                    fill_sc150(case, str(_TPL/"sc150.pdf"), str(tmp/"sc150.pdf"))
+                    result["SC-150"] = (tmp/"sc150.pdf").read_bytes()
+                except Exception:
+                    # Non-fatal: continue generating other forms
+                    pass
 
-            # SC-107 subpoena (if subpoena info present)
-            try:
-                fill_sc107(case, str(_TPL/"sc107.pdf"), str(tmp/"sc107.pdf"))
-                result["SC-107"] = (tmp/"sc107.pdf").read_bytes()
-            except Exception:
-                # Non-fatal: continue generating other forms even if SC-107 fails
-                pass
+            # SC-107 subpoena package: form with attachment boxes checked
+            # plus Attachment 2a / 3 / 4 pages (only if subpoena info present)
+            _sub = case.get("subpoena", {}) or {}
+            if any(r for r in (_sub.get("requests") or []) if r) or (_sub.get("to") or "").strip():
+                try:
+                    fill_sc107(case, str(_TPL/"sc107.pdf"), str(tmp/"sc107.pdf"))
+                    result["SC-107"] = (tmp/"sc107.pdf").read_bytes()
+                except Exception:
+                    # Non-fatal: continue generating other forms
+                    pass
 
             # SC-100A: generate one form per additional defendant (if present)
             for i, ad in enumerate(case.get('additional_defendants', []) or [] , start=1):
@@ -372,7 +549,7 @@ def _parse_address(raw: str) -> dict:
     """Split a freeform US address into {street, city, state, zip}."""
     raw = str(raw).strip() if raw and not (isinstance(raw, float) and pd.isna(raw)) else ""
     if not raw:
-        return {"street": "", "city": "Oakland", "state": "CA", "zip": ""}
+        return {"street": "", "city": "", "state": "CA", "zip": ""}
 
     m = _STATE_ZIP_RE.search(raw)
     if m:
@@ -394,13 +571,13 @@ def _parse_address(raw: str) -> dict:
             else:
                 # Fallback: last word is city
                 parts = before.rsplit(None, 1)
-                street, city = (parts[0], parts[1]) if len(parts) == 2 else (before, "Oakland")
+                street, city = (parts[0], parts[1]) if len(parts) == 2 else (before, "")
 
         return {"street": street or raw, "city": city, "state": state, "zip": zip_}
 
     # No STATE ZIP found — just extract ZIP if present
     z = _ZIP_RE.search(raw)
-    return {"street": raw, "city": "Oakland", "state": "CA", "zip": z.group(1) if z else ""}
+    return {"street": raw, "city": "", "state": "CA", "zip": z.group(1) if z else ""}
 
 
 def _parse_date(raw) -> str:
@@ -560,7 +737,7 @@ def template_row_to_case(row: pd.Series) -> dict:
         "plaintiff": {
             "name":   s("plaintiff_name"),
             "street": s("plaintiff_street"),
-            "city":   s("plaintiff_city", "Oakland"),
+            "city":   s("plaintiff_city"),
             "state":  s("plaintiff_state", "CA"),
             "zip":    s("plaintiff_zip"),
             "phone":  s("plaintiff_phone"),
@@ -616,6 +793,8 @@ def template_row_to_case(row: pd.Series) -> dict:
                 s("subpoena_request_9"),
                 s("subpoena_request_10"),
             ],
+            "good_cause":  s("subpoena_good_cause"),
+            "materiality": s("subpoena_materiality"),
         },
     }
 
@@ -632,7 +811,7 @@ _TEMPLATE_COLS = [
     ("filing_date",             "Date filing court papers MM/DD/YYYY",            True,  "09/15/2025"),
     ("total_monthly_income",    "Total monthly income $",                          True,  "400"),
     ("total_monthly_expenses",  "Total monthly expenses $",                        True,  "300"),
-    ("plaintiff_city",          "City (default Oakland)",                         False, "Oakland"),
+    ("plaintiff_city",          "Plaintiff's city",                               False, "Oakland"),
     ("plaintiff_state",         "State (default CA)",                             False, "CA"),
     ("plaintiff_zip",           "ZIP code",                                       False, "94609"),
     ("plaintiff_phone",         "Phone number",                                   False, "510-555-0100"),
@@ -663,6 +842,8 @@ _TEMPLATE_COLS = [
     ("subpoena_request_8",      "SC-107 request item 8",                          False, "All surveillance camera and private video footage from the sweep location."),
     ("subpoena_request_9",      "SC-107 request item 9",                          False, "All records of coordination between police, DPW, and other City agencies."),
     ("subpoena_request_10",     "SC-107 request item 10",                         False, "All logs, schedules, and written directives authorizing the sweeps."),
+    ("subpoena_good_cause",     "Attachment 3: why good cause exists (blank = default)",   False, ""),
+    ("subpoena_materiality",    "Attachment 4: why records are material (blank = default)", False, ""),
     ("item_1_desc",             "Property item 1 description",                    False, "Tent and sleeping bag"),
     ("item_1_value",            "Property item 1 value $",                         False, "350"),
     ("item_2_desc",             "Property item 2 description",                    False, "Clothing"),
@@ -692,6 +873,8 @@ _SC107_TEMPLATE_COLS = [
     ("subpoena_request_8",       "SC-107 request item 8",                          False, "All surveillance camera and private video footage from the sweep location."),
     ("subpoena_request_9",       "SC-107 request item 9",                          False, "All records of coordination between police, DPW, and other City agencies."),
     ("subpoena_request_10",      "SC-107 request item 10",                         False, "All logs, schedules, and written directives authorizing the sweeps."),
+    ("subpoena_good_cause",      "Attachment 3: why good cause exists (blank = default)",   False, ""),
+    ("subpoena_materiality",     "Attachment 4: why records are material (blank = default)", False, ""),
 ]
 
 
@@ -712,10 +895,207 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.title("California Encampment — Small Claims Autofiller")
+# ─── Officer sign-in (top right) & data portal ────────────────────────────────
+
+from accounts import (
+    add_user as _acct_add, load_users as _acct_load, verify_login as _acct_verify,
+)
+
+
+def _admin_url() -> str:
+    """URL of the full case tracker (admin.py), for the link inside the portal."""
+    try:
+        if "admin_url" in st.secrets:
+            return str(st.secrets["admin_url"])
+    except Exception:
+        pass
+    return os.environ.get("BHU_ADMIN_URL", "http://localhost:8502")
+
+
+def _load_case_records() -> list:
+    records = []
+    for path in sorted(_CASES_DIR.glob("*.json")):
+        if path.name.startswith(("sample", "_")):
+            continue
+        try:
+            c = json.loads(path.read_text())
+        except Exception:
+            continue
+        if (c.get("plaintiff") or {}).get("name"):
+            records.append(c)
+    return records
+
+
+def _render_admin_portal(user: str) -> None:
+    """Signed-in officers see the collected data instead of the intake form."""
+    st.header("📋 Officer Data Portal")
+    st.caption(
+        f"Signed in as **{user}**. Everything the site has collected, one "
+        "section per claimant. To change statuses, fix intake mistakes, or "
+        "generate filing packets, open the "
+        f"[full case tracker]({_admin_url()})."
+    )
+
+    records = _load_case_records()
+    if not records:
+        st.info(
+            "No claimant data yet. A claimant's record appears here the "
+            "moment they press **Save Progress** or **Generate Forms** on "
+            "this site."
+        )
+        return
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Claimants", len(records))
+    m2.metric(
+        "Active cases",
+        sum(1 for c in records
+            if not str((c.get("tracking") or {}).get("status", "Intake")).startswith(("Resolved", "Closed"))),
+    )
+    _total = 0.0
+    for c in records:
+        try:
+            _total += float(str((c.get("claim") or {}).get("amount", "0")).replace("$", "").replace(",", "") or 0)
+        except ValueError:
+            pass
+    m3.metric("Total claimed", f"${_total:,.0f}")
+    st.divider()
+
+    tab_people, tab_csv = st.tabs(["👥 Claimants", "📊 Data (CSV)"])
+
+    with tab_people:
+        for c in records:
+            p = c.get("plaintiff") or {}
+            cl = c.get("claim") or {}
+            d = c.get("defendant") or {}
+            t = c.get("tracking") or {}
+            lw = c.get("lawsuit") or {}
+            label = (
+                f"**{c.get('internal_case_number', '—')}** · {p.get('name', '')} "
+                f"· {t.get('status', 'Intake')} · ${cl.get('amount', '—')}"
+            )
+            with st.expander(label):
+                a, b = st.columns(2)
+                with a:
+                    st.markdown(
+                        "##### Contact\n"
+                        f"{p.get('name', '—')}  \n"
+                        f"{p.get('street', '—')}, {p.get('city', '')} {p.get('state', '')} {p.get('zip', '')}  \n"
+                        f"📞 {p.get('phone') or '—'} · ✉️ {p.get('email') or '—'}"
+                    )
+                    st.markdown(
+                        "##### Claim\n"
+                        f"**Against:** {d.get('name', '—')}  \n"
+                        f"**Incident:** {cl.get('incident_date', '—')} · "
+                        f"**Amount:** ${cl.get('amount', '—')}  \n"
+                        f"**Govt claim filed:** {cl.get('govt_claim_filed_date') or '—'} · "
+                        f"**Filing date:** {(c.get('filing') or {}).get('filing_date') or '—'}"
+                    )
+                    if cl.get("reason"):
+                        st.markdown(f"> {cl['reason'][:400]}{'…' if len(cl.get('reason', '')) > 400 else ''}")
+                    _items = [i for i in (cl.get("items") or []) if (i.get("description") or "").strip()]
+                    if _items:
+                        st.markdown("##### Itemized property")
+                        st.table(pd.DataFrame(_items))
+                with b:
+                    st.markdown(
+                        "##### Case activity\n"
+                        f"**Status:** {t.get('status', 'Intake')}  \n"
+                        f"**First captured:** {(c.get('captured_at') or '—')[:16]}  \n"
+                        f"**Last update:** {(t.get('updated_at') or '—')[:16]}"
+                    )
+                    for h in reversed((t.get("history") or [])[-10:]):
+                        st.caption(f"• {h.get('at', '')[:16]} · {h.get('officer') or '—'} · {h.get('change', '')}")
+                    if lw:
+                        st.markdown(
+                            "##### Lawsuit\n"
+                            f"**Court case #:** {c.get('case_number') or '—'} · "
+                            f"**Filed:** {lw.get('filed_on') or '—'}  \n"
+                            f"**Trial:** {lw.get('trial_date') or '—'} · "
+                            f"**Outcome:** {lw.get('outcome') or 'Pending'} · "
+                            f"**Judgment:** ${lw.get('judgment_amount') or '—'}"
+                        )
+                    _sub = c.get("subpoena") or {}
+                    if (_sub.get("to") or "").strip() or any(_sub.get("requests") or []):
+                        st.markdown(
+                            "##### Subpoena\n"
+                            f"**To:** {_sub.get('to') or '—'} · "
+                            f"**{len([r for r in (_sub.get('requests') or []) if r])}** record request(s)"
+                        )
+                st.download_button(
+                    "⬇️ Full record (JSON)",
+                    data=json.dumps(c, indent=2).encode(),
+                    file_name=f"{c.get('internal_case_number', 'case')}_record.json",
+                    mime="application/json",
+                    key=f"portal_json_{c.get('internal_case_number', '')}_{p.get('name', '')}",
+                )
+
+    with tab_csv:
+        st.caption(
+            "The same data flattened to one row per claimant, one column per "
+            "field — ready for spreadsheets or programming."
+        )
+
+        def _cell(v):
+            return json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v
+
+        flat = pd.json_normalize(records, sep=".").apply(lambda col: col.map(_cell))
+        st.dataframe(flat, use_container_width=True, height=420)
+        st.download_button(
+            "⬇️ Download CSV (all claimants, all fields)",
+            data=flat.to_csv(index=False).encode(),
+            file_name=f"bhu_claimants_{datetime.now():%Y%m%d}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+
+_pop = st.popover if hasattr(st, "popover") else (lambda label, **_k: st.expander(label))
+_title_l, _title_r = st.columns([5, 1])
+with _title_l:
+    st.title("California Encampment — Small Claims Autofiller")
+with _title_r:
+    _signed_in = st.session_state.get("bhu_admin_user")
+    if _signed_in:
+        with _pop(f"👤 {_signed_in}", use_container_width=True):
+            if st.button("Sign out", use_container_width=True, key="portal_signout"):
+                st.session_state.pop("bhu_admin_user", None)
+                st.rerun()
+    else:
+        with _pop("🔐 Sign In", use_container_width=True):
+            _users = _acct_load()
+            if not _users:
+                st.caption("No officer accounts yet — create the admin account:")
+                nu = st.text_input("Admin username", key="portal_new_user")
+                np1 = st.text_input("Password (min 8 chars)", type="password", key="portal_new_pw1")
+                np2 = st.text_input("Confirm password", type="password", key="portal_new_pw2")
+                if st.button("Create admin account", key="portal_create", use_container_width=True):
+                    if np1 != np2:
+                        st.error("Passwords don't match.")
+                    else:
+                        err = _acct_add(_users, nu, np1)
+                        if err:
+                            st.error(err)
+                        else:
+                            st.session_state["bhu_admin_user"] = nu.strip().lower()
+                            st.rerun()
+            else:
+                lu = st.text_input("Username", key="portal_login_user")
+                lp = st.text_input("Password", type="password", key="portal_login_pw")
+                if st.button("Sign in", key="portal_login", use_container_width=True):
+                    if _acct_verify(_users, lu, lp):
+                        st.session_state["bhu_admin_user"] = lu.strip().lower()
+                        st.rerun()
+                    else:
+                        st.error("Wrong username or password.")
+
+if st.session_state.get("bhu_admin_user"):
+    _render_admin_portal(st.session_state["bhu_admin_user"])
+    st.stop()
+
 st.caption(
     "Generates a government claim form plus SC-100, SC-100A, FW-001, FW-003, "
-    "SC-112A, SC-150, and SC-107 for encampment property destruction cases in "
+    "SC-112A, and SC-150 for encampment property destruction cases in "
     "any California county — from the initial government claim, to filing the "
     "lawsuit, to preparing for trial."
 )
@@ -751,92 +1131,36 @@ def _court_selector(key_prefix: str, default_county: str = "Alameda") -> dict:
         "zip":     chosen["zip"],
     }
 
-_SELECTOR_MANUAL = "🏘️ Unincorporated area / Other (enter manually)"
-
-
-def _defendant_selector(key_prefix: str, default_city: str = "Oakland") -> dict:
-    """Dropdown of all CA municipalities + manual entry for unincorporated areas.
-    Always returns a fully-populated defendant dict.
-    """
-    city_options = [_SELECTOR_MANUAL] + ALL_CITIES
-    default_idx = ALL_CITIES.index(default_city) + 1 if default_city in ALL_CITIES else 1
-    selected = st.selectbox(
-        "Defendant City / Municipality *",
-        city_options,
-        index=default_idx,
-        key=f"{key_prefix}_def_city",
-        help=(
-            "Select the California city or town being sued. "
-            "For unincorporated county areas, county agencies, or any other entity, "
-            "choose 'Unincorporated area / Other' to enter all fields manually."
-        ),
-    )
-    if selected == _SELECTOR_MANUAL:
-        st.caption("Enter the defendant's information manually.")
-        c1, c2 = st.columns(2)
-        with c1:
-            name_v  = st.text_input("Defendant Name *",    placeholder="County of Alameda", key=f"{key_prefix}_cust_name")
-            str_v   = st.text_input("Street Address",       placeholder="1221 Oak St",       key=f"{key_prefix}_cust_street")
-            city_v  = st.text_input("City",                 placeholder="Oakland",           key=f"{key_prefix}_cust_city")
-            s1, s2  = st.columns(2)
-            with s1:
-                state_v = st.text_input("State", value="CA",          key=f"{key_prefix}_cust_state")
-            with s2:
-                zip_v   = st.text_input("ZIP",   placeholder="94612", key=f"{key_prefix}_cust_zip")
-        with c2:
-            agent_name_v   = st.text_input("Agent for Service",  value="Clerk",         key=f"{key_prefix}_cust_agent_name")
-            agent_title_v  = st.text_input("Agent Title",        value="County Clerk",  key=f"{key_prefix}_cust_agent_title")
-            agent_str_v    = st.text_input("Agent Street",       placeholder="1221 Oak St", key=f"{key_prefix}_cust_agent_street")
-            agent_city_v   = st.text_input("Agent City",         placeholder="Oakland",     key=f"{key_prefix}_cust_agent_city")
-            agent_zip_v    = st.text_input("Agent ZIP",          placeholder="94612",       key=f"{key_prefix}_cust_agent_zip")
-        return {
-            "name":          name_v.strip(),
-            "address":       str_v.strip(),
-            "city":          city_v.strip(),
-            "state":         state_v.strip() or "CA",
-            "zip":           zip_v.strip(),
-            "agent_name":    agent_name_v.strip() or "Clerk",
-            "agent_title":   agent_title_v.strip() or "County Clerk",
-            "agent_address": agent_str_v.strip(),
-            "agent_city":    agent_city_v.strip(),
-            "agent_state":   "CA",
-            "agent_zip":     agent_zip_v.strip(),
-        }
-    d = defendant_info(selected)
-    st.caption(
-        f"**{d['name']}** · {d['address']}, {d['city']}, CA {d['zip']} "
-        f"· Agent for service: {d['agent_name']}"
-    )
-    return d
-
-
-_CUSTOM_DEFENDANT = "🏘️ Unincorporated area / Other (enter manually)"
+_CUSTOM_DEFENDANT = "✏️ No prefill — enter any defendant (person, county, unincorporated area…)"
 
 
 def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
-    """One defendant entry: city dropdown (or enter-your-own) plus editable
-    address fields prefilled from the municipality database.
+    """One defendant entry: fully editable fields for suing anyone — a
+    person, business, county agency, or city. An optional dropdown prefills
+    the fields from the California municipality database, but nothing is
+    ever locked to a city.
 
     The primary defendant (SC-100) also gets agent-for-service fields;
     additional defendants (SC-100A) get phone / mailing / job-title fields.
     """
     city_options = [_CUSTOM_DEFENDANT] + ALL_CITIES
-    default_idx = (ALL_CITIES.index("Oakland") + 1) if (is_primary and "Oakland" in ALL_CITIES) else 0
     selected = st.selectbox(
-        "Defendant City / Municipality *",
+        "Prefill from a California city (optional)",
         city_options,
-        index=default_idx,
+        index=0,
         key=f"{key_prefix}_def{def_id}_city_sel",
         help=(
-            "Select the California city or town being sued, or choose "
-            "'Unincorporated area / Other' for residents of unincorporated county areas, "
-            "county agencies, or any other entity. All fields below stay editable."
+            "You can sue anyone — type the defendant's information directly "
+            "in the fields below (a person, business, county agency, or an "
+            "unincorporated county area). If you're suing a California city, "
+            "picking it here just prefills the address and agent-for-service "
+            "fields; everything stays editable."
         ),
     )
     if selected == _CUSTOM_DEFENDANT:
         d = {
             "name": "", "address": "", "city": "", "state": "CA", "zip": "",
-            "agent_name": "City Clerk", "agent_title": "City Clerk",
+            "agent_name": "", "agent_title": "",
             "agent_address": "", "agent_city": "", "agent_state": "CA", "agent_zip": "",
         }
         kp = f"{key_prefix}_def{def_id}_custom"
@@ -867,8 +1191,12 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
 
     with c2:
         if is_primary:
-            out["agent_name"]    = st.text_input("Agent for Service (Name)", value=d["agent_name"], key=f"{kp}_agent_name").strip() or "City Clerk"
-            out["agent_title"]   = st.text_input("Agent Title", value=d["agent_title"], key=f"{kp}_agent_title").strip() or "City Clerk"
+            out["agent_name"]    = st.text_input(
+                "Agent for Service (Name)", value=d["agent_name"], key=f"{kp}_agent_name",
+                help="Who accepts legal papers for the defendant. For a city this is "
+                     "usually the City Clerk; leave blank when suing an individual.",
+            ).strip()
+            out["agent_title"]   = st.text_input("Agent Title", value=d["agent_title"], key=f"{kp}_agent_title").strip()
             out["agent_address"] = st.text_input("Agent Street", value=d["agent_address"], key=f"{kp}_agent_street").strip()
             out["agent_city"]    = st.text_input("Agent City", value=d["agent_city"], key=f"{kp}_agent_city").strip()
             out["agent_state"]   = "CA"
@@ -899,40 +1227,12 @@ with tab_manual:
         "Before you can sue a California city or public entity for property "
         "destroyed in a sweep, you must first file a government tort claim "
         "(Gov. Code §§ 905, 910) with that entity — generally within six months "
-        "of the incident. Fill in the defendant, your information, and the "
-        "incident below, then generate the claim form to file with the City Clerk."
+        "of the incident. Fill in your information and the incident below, "
+        "then either upload your jurisdiction's own claim form (PDF) to "
+        "auto-fill it, or generate a generic claim form to file with the "
+        "City Clerk. The entity being claimed against comes from the "
+        "Defendant section in Step 2."
     )
-
-    # ── Defendants (dynamic list; extras go on SC-100A) ────────────────
-    if "manual_def_ids" not in st.session_state:
-        st.session_state["manual_def_ids"] = [0]
-        st.session_state["manual_def_next"] = 1
-
-    hdr_l, hdr_r = st.columns([0.92, 0.08])
-    with hdr_l:
-        st.subheader("Defendant")
-    with hdr_r:
-        if st.button("➕", key="manual_add_def", help="Add another defendant (listed on form SC-100A)"):
-            st.session_state["manual_def_ids"].append(st.session_state["manual_def_next"])
-            st.session_state["manual_def_next"] += 1
-            st.rerun()
-
-    manual_defendants = []
-    for pos, def_id in enumerate(st.session_state["manual_def_ids"]):
-        is_primary = pos == 0
-        if is_primary:
-            if len(st.session_state["manual_def_ids"]) > 1:
-                st.markdown("**Defendant 1** · named on SC-100")
-        else:
-            rc1, rc2 = st.columns([0.92, 0.08])
-            with rc1:
-                st.markdown(f"**Defendant {pos + 1}** · on attached SC-100A")
-            with rc2:
-                if st.button("✕", key=f"manual_rm_def{def_id}", help="Remove this defendant"):
-                    st.session_state["manual_def_ids"].remove(def_id)
-                    st.rerun()
-        manual_defendants.append(_defendant_block("manual", def_id, is_primary))
-    st.divider()
 
     # ── Plaintiff ──────────────────────────────────────────────────────
     st.subheader("Plaintiff")
@@ -945,7 +1245,7 @@ with tab_manual:
         )
         phone  = st.text_input("Phone", placeholder="510-555-0100")
     with c2:
-        city = st.text_input("City", value="Oakland")
+        city = st.text_input("City", placeholder="Your city")
         cs1, cs2 = st.columns(2)
         with cs1:
             state = st.text_input("State", value="CA")
@@ -990,33 +1290,152 @@ with tab_manual:
         height=120,
     )
 
-    # ── Generate the government claim form ─────────────────────────────
-    if st.button(
-        "Generate Government Claim Form", type="primary",
-        use_container_width=True, key="gen_govt_claim",
-    ):
-        _gc_def = manual_defendants[0] if manual_defendants else {}
+    # ── Itemized property (used on the claim form, declaration, SC-100) ─
+    st.divider()
+    st.subheader("Itemized Property")
+    st.caption("List each item that was destroyed, its estimated value, and its condition before the loss.")
+    items_df = st.data_editor(
+        pd.DataFrame({
+            "Description": ["", "", ""],
+            "Value ($)": ["", "", ""],
+            "Condition": ["New", "Good", "Fair"],
+        }),
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Description": st.column_config.TextColumn(width="large"),
+            "Value ($)": st.column_config.TextColumn(width="small"),
+            "Condition": st.column_config.SelectboxColumn(
+                width="small",
+                options=["New", "Good", "Fair", "Salvage"],
+            ),
+        },
+        hide_index=True,
+    )
+
+    def _items_from_editor() -> list:
+        out = []
+        for _, r in items_df.iterrows():
+            description = str(r.get("Description", "")).strip()
+            if not description:
+                continue
+            out.append({
+                "description": description,
+                "value": str(r.get("Value ($)", "")).strip(),
+                "condition": str(r.get("Condition", "")).strip() or "Unknown",
+            })
+        return out
+
+    # ── Claim data shared by the uploaded-PDF and generic paths ────────
+    def _collect_claim_data() -> dict:
+        # Defendant widgets live in Step 2; the primary defendant's values
+        # are published to session state each run.
+        _gc_defs = st.session_state.get("manual_defendants_data") or [{}]
+        _gc_def = _gc_defs[0]
         _clerk_addr = ", ".join(part for part in [
             (_gc_def.get("agent_address") or "").strip(),
             (_gc_def.get("agent_city") or "").strip(),
             f"CA {(_gc_def.get('agent_zip') or '').strip()}".strip(),
         ] if part)
+        return {
+            "entity":            _gc_def.get("name", ""),
+            "clerk_address":     _clerk_addr,
+            "claimant_name":     name.strip(),
+            "claimant_address":  ", ".join(p for p in [
+                street.strip(), city.strip(),
+                f"{state.strip()} {zip_.strip()}".strip(),
+            ] if p),
+            "claimant_phone":    phone.strip(),
+            "claimant_email":    email.strip(),
+            "incident_date":     incident_date.strip(),
+            "incident_location": incident_location.strip(),
+            "description":       claim_reason.strip(),
+            "employees":         involved_employees.strip(),
+            "amount":            claim_amount.strip(),
+            "items":             _items_from_editor(),
+        }
+
+    # ── Option A: your jurisdiction's own claim form (PDF upload) ──────
+    st.divider()
+    st.markdown("**Option A — Use your jurisdiction's own claim form**")
+    st.caption(
+        "Many cities and counties require claims to be submitted on their "
+        "own form (usually available on the city clerk's or county's "
+        "website). Upload that form as a PDF and your answers above will "
+        "be filled into it automatically where possible."
+    )
+    local_claim_pdf = st.file_uploader(
+        "Upload your local jurisdiction's claim form (PDF)",
+        type=["pdf"],
+        key="govt_local_pdf",
+    )
+
+    if local_claim_pdf is not None:
+        if st.button(
+            "Auto-Fill Uploaded Claim Form", type="primary",
+            use_container_width=True, key="gen_local_claim",
+        ):
+            try:
+                filled, matched, unmatched = _fill_uploaded_claim_pdf(
+                    local_claim_pdf.getvalue(), _collect_claim_data()
+                )
+                st.session_state["local_claim_bytes"] = filled
+                st.session_state["local_claim_matched"] = matched
+                st.session_state["local_claim_unmatched"] = unmatched
+                st.session_state["local_claim_name"] = (
+                    f"{_slug(name.strip() or 'claim')}_"
+                    f"{_slug(Path(local_claim_pdf.name).stem)}_filled.pdf"
+                )
+            except ValueError as e:
+                st.session_state.pop("local_claim_bytes", None)
+                st.warning(str(e))
+            except Exception as e:
+                st.session_state.pop("local_claim_bytes", None)
+                st.error(f"Could not fill the uploaded form: {e}")
+
+        if st.session_state.get("local_claim_bytes"):
+            _n_matched = len(st.session_state.get("local_claim_matched", {}))
+            _unmatched = st.session_state.get("local_claim_unmatched", [])
+            st.success(f"Auto-filled {_n_matched} field(s) on the uploaded form.")
+            st.download_button(
+                "⬇️ Download Filled Local Claim Form (PDF)",
+                data=st.session_state["local_claim_bytes"],
+                file_name=st.session_state.get("local_claim_name", "local_claim_filled.pdf"),
+                mime="application/pdf",
+                use_container_width=True,
+                key="dl_local_claim",
+            )
+            if st.session_state.get("local_claim_matched"):
+                with st.expander("Fields that were auto-filled"):
+                    for lbl, val in st.session_state["local_claim_matched"].items():
+                        st.markdown(f"- **{lbl}** → {val[:120]}")
+            if _unmatched:
+                with st.expander(
+                    f"{len(_unmatched)} field(s) left blank — complete by hand"
+                ):
+                    for lbl in _unmatched:
+                        st.markdown(f"- {lbl}")
+            st.caption(
+                "⚠️ Automatic matching is best-effort — **review every page** "
+                "before signing and filing. Fields the matcher could not "
+                "recognize are left blank."
+            )
+
+    # ── Option B: generic Gov. Code claim form (Word) ───────────────────
+    st.markdown("**Option B — Generic claim form (Word)**")
+    st.caption(
+        "If your jurisdiction does not require its own form (or you can't "
+        "get it), generate a generic claim that satisfies Gov. Code "
+        "§§ 905/910."
+    )
+    if st.button(
+        "Generate Generic Claim Form (Word)",
+        use_container_width=True, key="gen_govt_claim",
+    ):
         try:
-            st.session_state["govt_claim_bytes"] = _build_govt_claim_docx({
-                "entity":            _gc_def.get("name", ""),
-                "clerk_address":     _clerk_addr,
-                "claimant_name":     name.strip(),
-                "claimant_address":  ", ".join(p for p in [
-                    street.strip(), city.strip(),
-                    f"{state.strip()} {zip_.strip()}".strip(),
-                ] if p),
-                "claimant_phone":    phone.strip(),
-                "incident_date":     incident_date.strip(),
-                "incident_location": incident_location.strip(),
-                "description":       claim_reason.strip(),
-                "employees":         involved_employees.strip(),
-                "amount":            claim_amount.strip(),
-            })
+            st.session_state["govt_claim_bytes"] = _build_govt_claim_docx(
+                _collect_claim_data()
+            )
             st.session_state["govt_claim_name"] = (
                 f"{_slug(name.strip() or 'claim')}_government_claim.docx"
             )
@@ -1032,11 +1451,12 @@ with tab_manual:
             use_container_width=True,
             key="dl_govt_claim",
         )
-        st.caption(
-            "Print, sign, and file this with the City Clerk (the agent for service "
-            "shown in the defendant section). The city generally has **45 days** to "
-            "respond. Once the claim is rejected — or 45 days pass — move to Step 2."
-        )
+    st.caption(
+        "Print, sign, and file the claim with the City Clerk (the agent for "
+        "service shown in the Step 2 defendant section). The city generally has "
+        "**45 days** to respond. Once the claim is rejected — or 45 days "
+        "pass — move to Step 2."
+    )
 
     # ════════════════════════════════════════════════════
     # STEP 2 — FILE THE SMALL CLAIMS LAWSUIT
@@ -1045,10 +1465,43 @@ with tab_manual:
     st.header("Step 2 — File the Small Claims Lawsuit")
     st.caption(
         "After the claim is rejected (or 45 days pass with no response), file in "
-        "small claims court. Pick the court, set your dates, itemize the property, "
-        "and generate the filing packet: SC-100 (+ SC-100A), FW-001, FW-003, "
-        "SC-112A, and SC-150."
+        "small claims court. Name the defendant(s), pick the court, set your "
+        "dates, itemize the property, and generate the filing packet: SC-100 "
+        "(+ SC-100A), FW-001, FW-003, and SC-112A."
     )
+
+    # ── Defendants (dynamic list; extras go on SC-100A) ────────────────
+    if "manual_def_ids" not in st.session_state:
+        st.session_state["manual_def_ids"] = [0]
+        st.session_state["manual_def_next"] = 1
+
+    hdr_l, hdr_r = st.columns([0.92, 0.08])
+    with hdr_l:
+        st.subheader("Defendant")
+    with hdr_r:
+        if st.button("➕", key="manual_add_def", help="Add another defendant (listed on form SC-100A)"):
+            st.session_state["manual_def_ids"].append(st.session_state["manual_def_next"])
+            st.session_state["manual_def_next"] += 1
+            st.rerun()
+
+    manual_defendants = []
+    for pos, def_id in enumerate(st.session_state["manual_def_ids"]):
+        is_primary = pos == 0
+        if is_primary:
+            if len(st.session_state["manual_def_ids"]) > 1:
+                st.markdown("**Defendant 1** · named on SC-100")
+        else:
+            rc1, rc2 = st.columns([0.92, 0.08])
+            with rc1:
+                st.markdown(f"**Defendant {pos + 1}** · on attached SC-100A")
+            with rc2:
+                if st.button("✕", key=f"manual_rm_def{def_id}", help="Remove this defendant"):
+                    st.session_state["manual_def_ids"].remove(def_id)
+                    st.rerun()
+        manual_defendants.append(_defendant_block("manual", def_id, is_primary))
+    # Step 1's government claim reads the primary defendant from here
+    st.session_state["manual_defendants_data"] = manual_defendants
+    st.divider()
 
     # Court selector lives outside the form so county → courthouse cascade works
     st.subheader("Filing Court")
@@ -1073,40 +1526,8 @@ with tab_manual:
         height=180,
     )
 
-    # ── Items ──────────────────────────────────────────────────────────
-    st.divider()
-    st.subheader("Itemized Property")
-    st.caption("List each item that was destroyed, its estimated value, and its condition before the loss.")
-    items_df = st.data_editor(
-        pd.DataFrame({
-            "Description": ["", "", ""],
-            "Value ($)": ["", "", ""],
-            "Condition": ["New", "Good", "Fair"],
-        }),
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "Description": st.column_config.TextColumn(width="large"),
-            "Value ($)": st.column_config.TextColumn(width="small"),
-            "Condition": st.column_config.SelectboxColumn(
-                width="small",
-                options=["New", "Good", "Fair", "Salvage"],
-            ),
-        },
-        hide_index=True,
-    )
-
     if st.button("Generate declaration", use_container_width=True):
-        items = []
-        for _, r in items_df.iterrows():
-            description = str(r.get("Description", "")).strip()
-            if not description:
-                continue
-            items.append({
-                "description": description,
-                "value": str(r.get("Value ($)", "")).strip(),
-                "condition": str(r.get("Condition", "")).strip() or "Unknown",
-            })
+        items = _items_from_editor()
 
         declaration_text = _build_guided_declaration(
             declaration_text_input,
@@ -1158,9 +1579,19 @@ with tab_manual:
         exp_housing   = st.text_input("Housing ($)", value="0")
         total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300")
 
-    submitted = st.button(
-        "Generate Forms", type="primary", use_container_width=True
-    )
+    _gen_col, _save_col = st.columns([3, 1])
+    with _gen_col:
+        submitted = st.button(
+            "Generate Forms", type="primary", use_container_width=True
+        )
+    with _save_col:
+        save_progress = st.button(
+            "💾 Save Progress",
+            use_container_width=True,
+            help="Save everything entered so far under your case number — no "
+                 "forms are generated. You can come back later, and officers "
+                 "can review and correct it in the case tracker.",
+        )
 
     st.download_button(
         "⬇️ Download declaration as Word document",
@@ -1170,18 +1601,9 @@ with tab_manual:
         disabled=not declaration_text.strip(),
     )
 
-    # ── Handle submission ──────────────────────────────────────────────────
-    if submitted:
-        items = []
-        for _, r in items_df.iterrows():
-            description = str(r.get("Description", "")).strip()
-            if not description:
-                continue
-            items.append({
-                "description": description,
-                "value": str(r.get("Value ($)", "")).strip(),
-                "condition": str(r.get("Condition", "")).strip() or "Unknown",
-            })
+    # ── Handle submission / save-progress ──────────────────────────────────
+    if submitted or save_progress:
+        items = _items_from_editor()
         basis_code = fw_basis.split(" — ")[0].strip()
 
         _defendant = manual_defendants[0]
@@ -1242,6 +1664,8 @@ with tab_manual:
                        for line in st.session_state.get("sub_extra_requests", "").splitlines()
                        if line.strip()]
                 )[:10],
+                "good_cause":  st.session_state.get("sub_good_cause", "").strip(),
+                "materiality": st.session_state.get("sub_materiality", "").strip(),
             },
         }
 
@@ -1250,19 +1674,38 @@ with tab_manual:
             dd for dd in manual_defendants[1:] if dd.get('name')
         ]
 
+        # Capture the full intake under an internal case number before
+        # generating anything, so the information is kept even if a form fails.
         try:
-            pdfs = _generate_pdfs(case)
-            _show_downloads(pdfs, _slug(name.strip()))
-            st.download_button(
-                "💾  Save Case Data (JSON)",
-                data=json.dumps(case, indent=2).encode(),
-                file_name=f"{_slug(name.strip())}_case.json",
-                mime="application/json",
+            _capture_case_record(case)
+            st.info(
+                f"Internal case number: **{case['internal_case_number']}** — "
+                "the full intake was saved to the cases folder."
             )
-        except ValueError as e:
-            st.error(str(e))
         except Exception as e:
-            st.error(f"Unexpected error: {e}")
+            case.setdefault("internal_case_number", _internal_case_number(name))
+            st.warning(f"Could not save the intake record: {e}")
+
+        if save_progress and not submitted:
+            st.success(
+                "Progress saved. Come back anytime — re-saving on the same "
+                "day updates the same record — and officers can review and "
+                "correct everything in the case tracker."
+            )
+        else:
+            try:
+                pdfs = _generate_pdfs(case)
+                _show_downloads(pdfs, _slug(name.strip()))
+                st.download_button(
+                    "💾  Save Case Data (JSON)",
+                    data=json.dumps(case, indent=2).encode(),
+                    file_name=f"{case['internal_case_number']}_{_slug(name.strip())}_case.json",
+                    mime="application/json",
+                )
+            except ValueError as e:
+                st.error(str(e))
+            except Exception as e:
+                st.error(f"Unexpected error: {e}")
 
 
     # ════════════════════════════════════════════════════
@@ -1273,19 +1716,22 @@ with tab_manual:
     st.caption(
         "Once your case is filed, gather your evidence. Use the subpoena "
         "below to make the city or other agencies produce records — footage, "
-        "reports, policies — before your hearing."
+        "reports, policies — before your hearing. If you'll need someone to "
+        "help you present your case at trial, use the SC-109 section below "
+        "the subpoena. If you can't make your trial date, use the SC-150 "
+        "section to ask the court to postpone the trial."
     )
 
-    # ── Subpoena (SC-107) — separate, standalone form ──────────────────
+    # ── Subpoena (SC-107) — checkboxes only + typed attachments ─────────
     st.divider()
     st.subheader("Subpoena Request (SC-107)")
     st.caption(
-        "This is its own form: generate the subpoena by itself with the button "
-        "below, without generating the rest of the packet. The plaintiff and "
-        "defendant at the top of the SC-107 fill in automatically from the "
-        "sections above; enter who you're subpoenaing separately below. Filled "
-        "fields are also included in the packet the next time you press "
-        "**Generate Forms** in Step 2."
+        "Generates the SC-107 with only the \"Continued on Attachment "
+        "2a / 3 / 4\" boxes checked — the form's own text fields are left "
+        "blank for you to complete by hand. The substance of your request "
+        "is typed on Attachment 2a (documents requested), Attachment 3 "
+        "(good cause), and Attachment 4 (materiality), appended behind the "
+        "form."
     )
     _default_requests = _DEFAULT_SUBPOENA_REQUESTS
 
@@ -1293,30 +1739,26 @@ with tab_manual:
     _sub_def_name = (_sub_def.get("name") or "").strip()
 
     with st.container(border=True):
-        # Case caption: auto-filled from the sections above, but shown as
-        # real fields so they can be reviewed and edited before generating.
         st.markdown("**Case caption**")
         st.caption(
             "Auto-filled from the plaintiff and defendant sections above — "
-            "edit either field if the SC-107 should read differently."
+            "edit either field if the attachment caption should read differently."
         )
-        # Names are part of the keys so changes upstream refresh the defaults
         _cap_kp = f"subcap_{name.strip()}_{_sub_def_name}"
         cap1, cap2 = st.columns(2)
         with cap1:
             sub_plaintiff_name = st.text_input(
-                "Plaintiff (top of SC-107)",
+                "Plaintiff (top of attachment)",
                 value=name.strip(),
                 key=f"{_cap_kp}_plaintiff",
             )
         with cap2:
             sub_defendant_name = st.text_input(
-                "Defendant (top of SC-107)",
+                "Defendant (top of attachment)",
                 value=_sub_def_name,
                 key=f"{_cap_kp}_defendant",
             )
 
-        # Separate contact block for the person/agency being subpoenaed
         st.markdown("**Who are you subpoenaing?**")
         st.caption(
             "Enter the contact information of the person or agency you want "
@@ -1354,18 +1796,39 @@ with tab_manual:
             height=80,
         )
 
+        st.markdown("**Why the court should order production**")
+        st.caption(
+            "These go on Attachment 3 and Attachment 4. Defaults are written "
+            "for encampment sweep cases — edit them to fit your case."
+        )
+        sub_good_cause = st.text_area(
+            "Good cause for producing these records (Attachment 3)",
+            value=_SC107_DEFAULT_GOOD_CAUSE,
+            key="sub_good_cause",
+            height=110,
+        )
+        sub_materiality = st.text_area(
+            "Why these records are material to your case (Attachment 4)",
+            value=_SC107_DEFAULT_MATERIALITY,
+            key="sub_materiality",
+            height=110,
+        )
+        sub_case_number = st.text_input(
+            "Case number (shown on the attachments; leave blank if not yet assigned)",
+            key="sub_case_number",
+        )
+
         if st.button(
-            "Generate Subpoena Only (SC-107)",
+            "Generate Subpoena Package (SC-107 + Attachments)",
             use_container_width=True,
-            key="gen_sc107_only",
+            key="gen_sc107_package",
         ):
             _sub_case = {
                 "plaintiff": {"name": sub_plaintiff_name.strip() or "Plaintiff"},
-                "defendant": {**_sub_def, "name": sub_defendant_name.strip() or _sub_def_name},
-                "case_number": "",
-                "filing": {"filing_date": filing_date.strip()},
+                "defendant": {**_sub_def, "name": sub_defendant_name.strip() or _sub_def_name or "Defendant"},
+                "case_number": sub_case_number.strip(),
+                "court": manual_court,
                 "subpoena": {
-                    "case_caption": f"{sub_plaintiff_name.strip() or 'Plaintiff'} v. {sub_defendant_name.strip() or 'Defendant'}",
                     "to":               sub_to.strip(),
                     "custodian":        sub_custodian.strip(),
                     "service_location": sub_service.strip(),
@@ -1373,28 +1836,294 @@ with tab_manual:
                         [r for r, checked in subpoena_checks.items() if checked]
                         + [line.strip() for line in sub_extra.splitlines() if line.strip()]
                     )[:10],
+                    "good_cause":  sub_good_cause.strip(),
+                    "materiality": sub_materiality.strip(),
                 },
             }
             try:
                 with tempfile.TemporaryDirectory() as _td, _quiet():
                     _sub_out = Path(_td) / "sc107.pdf"
                     fill_sc107(_sub_case, str(_TPL / "sc107.pdf"), str(_sub_out))
-                    st.session_state["sc107_only_bytes"] = _sub_out.read_bytes()
-                st.session_state["sc107_only_name"] = (
+                    st.session_state["sc107_package_bytes"] = _sub_out.read_bytes()
+                st.session_state["sc107_package_name"] = (
                     f"{_slug(name.strip() or 'subpoena')}_sc107.pdf"
                 )
             except Exception as e:
-                st.session_state.pop("sc107_only_bytes", None)
-                st.error(f"Could not generate SC-107: {e}")
+                st.session_state.pop("sc107_package_bytes", None)
+                st.error(f"Could not generate the SC-107 package: {e}")
 
-        if st.session_state.get("sc107_only_bytes"):
+        if st.session_state.get("sc107_package_bytes"):
             st.download_button(
-                "⬇️ Download SC-107 Subpoena",
-                data=st.session_state["sc107_only_bytes"],
-                file_name=st.session_state.get("sc107_only_name", "sc107.pdf"),
+                "⬇️ Download SC-107 + Attachments (PDF)",
+                data=st.session_state["sc107_package_bytes"],
+                file_name=st.session_state.get("sc107_package_name", "sc107.pdf"),
                 mime="application/pdf",
                 use_container_width=True,
-                key="dl_sc107_only",
+                key="dl_sc107_package",
+            )
+
+    # ── Helper authorization (SC-109) — separate, standalone form ───────
+    st.divider()
+    st.subheader("Helper Authorization (SC-109)")
+    st.caption(
+        "If you cannot properly present your claim on your own, a friend, "
+        "family member, outreach worker, or advocate can ask the court for "
+        "permission to assist you at trial (Code Civ. Proc. § 116.540). "
+        "This fills the helper's information and the request to assist "
+        "(item 4 of the form); the helper files it with the small claims "
+        "clerk at or before the trial and signs it there."
+    )
+    with st.container(border=True):
+        sc109_c1, sc109_c2 = st.columns(2)
+        with sc109_c1:
+            sc109_helper_name = st.text_input(
+                "Helper's name", key="sc109_helper_name",
+            )
+        with sc109_c2:
+            sc109_helper_rel = st.text_input(
+                "Helper's relationship to you",
+                key="sc109_helper_rel",
+                placeholder="Friend / outreach worker / advocate",
+            )
+        sc109_helper_addr = st.text_input(
+            "Helper's address", key="sc109_helper_addr",
+        )
+        sc109_reason = st.text_area(
+            "Why do you need assistance presenting your case? "
+            "(This goes on the form, which is not confidential.)",
+            key="sc109_reason",
+            placeholder=(
+                "e.g., I have a disability that makes it difficult for me to "
+                "speak in court and keep track of documents…"
+            ),
+            height=100,
+        )
+        sc109_c3, sc109_c4 = st.columns(2)
+        with sc109_c3:
+            sc109_case_number = st.text_input(
+                "Case number (if assigned)", key="sc109_case_number",
+            )
+        with sc109_c4:
+            sc109_date = st.text_input(
+                "Date the helper signs (MM/DD/YYYY)", key="sc109_date",
+            )
+
+        if st.button(
+            "Generate Helper Authorization (SC-109)",
+            use_container_width=True,
+            key="gen_sc109",
+        ):
+            _sc109_case = {
+                "plaintiff": {"name": name.strip() or "Plaintiff"},
+                "defendant": {**_sub_def, "name": _sub_def_name or "Defendant"},
+                "case_number": sc109_case_number.strip(),
+                "court": manual_court,
+                "assistant": {
+                    "name":         sc109_helper_name.strip(),
+                    "address":      sc109_helper_addr.strip(),
+                    "relationship": sc109_helper_rel.strip(),
+                    "reason":       sc109_reason.strip(),
+                    "date":         sc109_date.strip(),
+                },
+            }
+            try:
+                with tempfile.TemporaryDirectory() as _td, _quiet():
+                    _sc109_out = Path(_td) / "sc109.pdf"
+                    fill_sc109(_sc109_case, str(_TPL / "sc109.pdf"), str(_sc109_out))
+                    st.session_state["sc109_bytes"] = _sc109_out.read_bytes()
+                st.session_state["sc109_name"] = (
+                    f"{_slug(name.strip() or 'helper')}_sc109.pdf"
+                )
+            except Exception as e:
+                st.session_state.pop("sc109_bytes", None)
+                st.error(f"Could not generate the SC-109: {e}")
+
+        if st.session_state.get("sc109_bytes"):
+            st.download_button(
+                "⬇️ Download SC-109 Authorization to Appear",
+                data=st.session_state["sc109_bytes"],
+                file_name=st.session_state.get("sc109_name", "sc109.pdf"),
+                mime="application/pdf",
+                use_container_width=True,
+                key="dl_sc109",
+            )
+
+    # ── Postpone trial (SC-150) — standalone form ────────────────────────
+    st.divider()
+    st.subheader("Postpone Trial (SC-150)")
+    st.caption(
+        "If you cannot attend your scheduled trial, ask the court to "
+        "postpone it (Code Civ. Proc. § 116.570). File this at least "
+        "**10 days** before trial if possible — there is a $10 fee unless "
+        "the court has granted a fee waiver. Your information is filled "
+        "in automatically from the plaintiff section above."
+    )
+    with st.container(border=True):
+        sc150_role = st.radio(
+            "I am the …",
+            ["Plaintiff", "Defendant"],
+            horizontal=True,
+            key="sc150_role",
+        )
+        sc150_c1, sc150_c2 = st.columns(2)
+        with sc150_c1:
+            sc150_trial_date = st.text_input(
+                "Current trial date *", key="sc150_trial_date",
+                placeholder="MM/DD/YYYY",
+            )
+        with sc150_c2:
+            sc150_new_date = st.text_input(
+                "Postpone trial until (approximate date) *",
+                key="sc150_new_date", placeholder="MM/DD/YYYY",
+            )
+        sc150_reason = st.text_area(
+            "Why do you need the postponement? *",
+            key="sc150_reason",
+            placeholder=(
+                "e.g., I am scheduled for a medical procedure that week / "
+                "I am still waiting for subpoenaed records the City has not "
+                "yet produced / my witness is unavailable…"
+            ),
+            height=100,
+        )
+        sc150_late_reason = st.text_area(
+            "If your trial is within the next 10 days — why didn't you ask sooner?",
+            key="sc150_late_reason",
+            placeholder="Leave blank if your trial is more than 10 days away.",
+            height=70,
+        )
+
+        st.markdown("**Has your claim been served?** (item 6 on the form)")
+        _SC150_SERVICE_OPTIONS = {
+            "Yes — the other parties have been served": "served",
+            "No — I am a defendant and have not filed a claim": "not_filed",
+            "No — some parties have not been served": "not_served",
+            "I don't know — the court clerk mailed my claim": "unknown",
+        }
+        sc150_service_label = st.selectbox(
+            "Service status",
+            list(_SC150_SERVICE_OPTIONS),
+            key="sc150_service_status",
+        )
+        sc150_status = _SC150_SERVICE_OPTIONS[sc150_service_label]
+
+        sc150_served, sc150_unserved, sc150_unknown = [], [], []
+        if sc150_status == "served":
+            _sc150_def_name = (_sub_def.get("name") or "").strip()
+            for _si in (1, 2):
+                sv1, sv2, sv3 = st.columns([2, 1, 1])
+                with sv1:
+                    _sname = st.text_input(
+                        f"Served party {_si} — name",
+                        value=_sc150_def_name if _si == 1 else "",
+                        key=f"sc150_served_name{_si}",
+                    )
+                with sv2:
+                    _scounty = st.text_input(
+                        "County they live in",
+                        value=manual_court.get("county", "") if _si == 1 else "",
+                        key=f"sc150_served_county{_si}",
+                    )
+                with sv3:
+                    _sdate = st.text_input(
+                        "Date served", placeholder="MM/DD/YYYY",
+                        key=f"sc150_served_date{_si}",
+                    )
+                if _sname.strip():
+                    sc150_served.append({
+                        "name":   _sname.strip(),
+                        "county": _scounty.strip(),
+                        "date":   _sdate.strip(),
+                    })
+        elif sc150_status == "not_served":
+            sc150_unserved = [
+                n.strip() for n in st.text_input(
+                    "Parties not yet served (separate names with a semicolon)",
+                    key="sc150_unserved_names",
+                ).split(";") if n.strip()
+            ]
+        elif sc150_status == "unknown":
+            sc150_unknown = [
+                n.strip() for n in st.text_input(
+                    "Parties whose service receipt is unconfirmed (separate with a semicolon)",
+                    key="sc150_unknown_names",
+                ).split(";") if n.strip()
+            ]
+
+        sc150_c3, sc150_c4 = st.columns(2)
+        with sc150_c3:
+            sc150_case_number = st.text_input(
+                "Case number", key="sc150_case_number",
+            )
+        with sc150_c4:
+            sc150_sign_date = st.text_input(
+                "Date you sign the request (MM/DD/YYYY)", key="sc150_sign_date",
+            )
+
+        if st.button(
+            "Generate Request to Postpone Trial (SC-150)",
+            use_container_width=True,
+            key="gen_sc150",
+        ):
+            _sc150_case = {
+                "plaintiff": {
+                    "name":   name.strip() or "Plaintiff",
+                    "street": street.strip(),
+                    "city":   city.strip(),
+                    "state":  state.strip() or "CA",
+                    "zip":    zip_.strip(),
+                    "phone":  phone.strip(),
+                },
+                "defendant": {**_sub_def, "name": _sub_def.get("name") or "Defendant"},
+                "case_number": sc150_case_number.strip(),
+                "court": manual_court,
+                "postponement": {
+                    "requester_name":     name.strip(),
+                    "role":               sc150_role.lower(),
+                    "phone":              phone.strip(),
+                    "current_trial_date": sc150_trial_date.strip(),
+                    "requested_date":     sc150_new_date.strip(),
+                    "reason":             sc150_reason.strip(),
+                    "late_reason":        sc150_late_reason.strip(),
+                    "service_status":     sc150_status,
+                    "served":             sc150_served,
+                    "unserved_names":     sc150_unserved,
+                    "unknown_names":      sc150_unknown,
+                    "request_date":       sc150_sign_date.strip(),
+                },
+            }
+            if not sc150_reason.strip() or not sc150_new_date.strip():
+                st.error(
+                    "Please fill in the requested new trial date and the "
+                    "reason for the postponement."
+                )
+            else:
+                try:
+                    with tempfile.TemporaryDirectory() as _td, _quiet():
+                        _sc150_out = Path(_td) / "sc150.pdf"
+                        fill_sc150(_sc150_case, str(_TPL / "sc150.pdf"), str(_sc150_out))
+                        st.session_state["sc150_bytes"] = _sc150_out.read_bytes()
+                    st.session_state["sc150_name"] = (
+                        f"{_slug(name.strip() or 'postpone')}_sc150.pdf"
+                    )
+                except Exception as e:
+                    st.session_state.pop("sc150_bytes", None)
+                    st.error(f"Could not generate the SC-150: {e}")
+
+        if st.session_state.get("sc150_bytes"):
+            st.download_button(
+                "⬇️ Download SC-150 Request to Postpone Trial",
+                data=st.session_state["sc150_bytes"],
+                file_name=st.session_state.get("sc150_name", "sc150.pdf"),
+                mime="application/pdf",
+                use_container_width=True,
+                key="dl_sc150",
+            )
+            st.caption(
+                "File the signed form with the small claims clerk (with the "
+                "$10 fee unless waived) and **mail or deliver a copy to every "
+                "other party in the case**. The court will notify you whether "
+                "the postponement is granted."
             )
 
 
@@ -1512,8 +2241,8 @@ with tab_sheet:
             f"{batch_court['address']}, {batch_court['city']}, CA {batch_court['zip']}"
         )
 
-        st.markdown("**Defendant**")
-        batch_def = _defendant_selector("batch")
+        st.markdown("**Defendant** — applies to every row in the spreadsheet")
+        batch_def = _defendant_block("batch", 0, is_primary=True)
 
         with st.container(border=True):
             d1, d2 = st.columns(2)
@@ -1570,9 +2299,10 @@ with tab_sheet:
             )
 
         if run_batch:
+            _batch_defendant = batch_def if (batch_def or {}).get("name") else DEFENDANT_DEFAULTS["city_of_oakland"]
             defaults = {
                 "court":                 batch_court,
-                "defendant":             batch_def,
+                "defendant":             _batch_defendant,
                 "filing_date":           b_filing_date.strip(),
                 "govt_claim_filed_date": b_govt_claim_date.strip(),
                 "claim_amount":          b_claim_amount.strip(),
@@ -1599,6 +2329,10 @@ with tab_sheet:
                 pname = str(row.get("Name", f"Row {i+1}")).strip()
                 try:
                     case = intake_row_to_case(row, defaults)
+                    try:
+                        _capture_case_record(case)
+                    except Exception:
+                        pass  # capture failure shouldn't block form generation
                     pdfs = _generate_pdfs(case)
                     results.append((pname, pdfs, None))
                 except ValueError as e:
@@ -1647,6 +2381,10 @@ with tab_sheet:
                 pname = str(row.get("plaintiff_name", f"Row {i+1}")).strip()
                 try:
                     case = template_row_to_case(row)
+                    try:
+                        _capture_case_record(case)
+                    except Exception:
+                        pass  # capture failure shouldn't block form generation
                     pdfs = _generate_pdfs(case)
                     results.append((pname, pdfs, None))
                 except ValueError as e:

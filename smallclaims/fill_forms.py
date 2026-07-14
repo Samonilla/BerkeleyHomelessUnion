@@ -530,125 +530,319 @@ def fill_sc109(case, template_path, output_path):
 # ─────────────────────────────────────────────────────────────
 
 def fill_sc112a(case, template_path, output_path):
-    p = case["plaintiff"]
-    claim = case["claim"]
-    filing = case.get("filing", {})
-    items = claim.get("items", [])
+    """Fill SC-112A, Proof of Service by Mail (Small Claims).
 
-    def _item_desc(i):
-        if i < len(items):
-            it = items[i]
-            desc = it.get("description", "")
-            val = it.get("value", "")
-            return f"{desc}  ${val}" if val else desc
-        return ""
+    SC-112A is completed and signed by a SERVER — an adult who is NOT a
+    party to the case (Cal. Rules of Court, rule 3.2107) — so the server's
+    information (item 1), the document checkboxes (item 2), the mailing
+    date, and the signature are intentionally left blank for the server to
+    complete. We prefill only what is known in advance: the case number
+    and the names/addresses of the parties to be served (item 3b), i.e.
+    the defendant and any additional defendants.
+    """
+    d = case.get("defendant", DEFENDANT_DEFAULTS["city_of_oakland"])
+
+    def _mail_addr(dd):
+        street = dd.get("address") or dd.get("street") or ""
+        line2 = " ".join(x for x in [
+            dd.get("city", ""), dd.get("state", ""), dd.get("zip", ""),
+        ] if x)
+        return ", ".join(part for part in [street, line2] if part)
 
     values = {
         "SC-112A[0].Page1[0].Header[0].CaseNumber_ft[0]": case.get("case_number", ""),
-
-        # Item 1 block: plaintiff name, case name, incident date, then item rows
-        "SC-112A[0].Page1[0].List1[0].Item1[0].FillText01[0]": p["name"],
-        "SC-112A[0].Page1[0].List1[0].Item1[0].FillText02[0]": _case_name(case),
-        "SC-112A[0].Page1[0].List1[0].Item1[0].FillText03[0]": claim.get("incident_date", ""),
-        "SC-112A[0].Page1[0].List1[0].Item1[0].FillText04[0]": _item_desc(0),
-        "SC-112A[0].Page1[0].List1[0].Item1[0].FillText05[0]": _item_desc(1),
-        "SC-112A[0].Page1[0].List1[0].Item1[0].FillText06[0]": _item_desc(2),
-        "SC-112A[0].Page1[0].List1[0].Item1[0].FillText07[0]": _item_desc(3),
-        "SC-112A[0].Page1[0].List1[0].Item1[0].FillText08[0]": _item_desc(4),
-
-        # Signature
-        "SC-112A[0].Page1[0].Sign[0].FillText14[0]": filing.get("filing_date", ""),
-        "SC-112A[0].Page1[0].Sign[0].FillText16[0]": p["name"],
     }
+
+    # Item 3b table — "Name of party served" / "Mailing address on the
+    # envelope". Row field-name suffixes on the official form, top to bottom:
+    _row_suffixes = ["11", "12", "13", "14", "1"]
+    parties = [d] + list(case.get("additional_defendants") or [])
+    for i, dd in enumerate(parties[:len(_row_suffixes)]):
+        sfx = _row_suffixes[i]
+        values[f"SC-112A[0].Page1[0].List3[0].Lib[0].Table[0].FillText10\\.{sfx}[0]"] = dd.get("name", "")
+        values[f"SC-112A[0].Page1[0].List3[0].Lib[0].Table[0].FillText11\\.{sfx}[0]"] = _mail_addr(dd)
 
     _write_pdf(template_path, output_path, values)
     print(f"  ✓ SC-112A → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
-# SC-150  Declaration
+# SC-150  Request to Postpone Trial (Small Claims)
+# Code Civ. Proc. § 116.570; Cal. Rules of Court, rule 3.2107
 # ─────────────────────────────────────────────────────────────
 
 def fill_sc150(case, template_path, output_path):
+    """Fill SC-150, Request to Postpone Trial, from case["postponement"].
+
+    Expected keys in case["postponement"] (all optional except reason /
+    requested_date, which make the request meaningful):
+        requester_name      defaults to plaintiff name
+        role                "plaintiff" | "defendant" (default "plaintiff")
+        mailing_address     defaults to plaintiff street/city/state/zip
+        phone               defaults to plaintiff phone
+        current_trial_date  item 2 — date trial is now scheduled (MM/DD/YYYY)
+        requested_date      item 3 — approximate new date requested
+        reason              item 4 — why the postponement is needed
+        late_reason         item 5 — why not requested sooner (trial < 10 days out)
+        service_status      item 6 — "not_filed" (6a) | "served" (6b) |
+                            "not_served" (6c) | "unknown" (6d)
+        served              list of up to 2 {name, county, date} dicts (6b)
+        unserved_names      list of up to 2 names (6c)
+        unknown_names       list of up to 2 names (6d)
+        request_date        signature date, defaults to filing.filing_date
+    """
     p = case["plaintiff"]
-    claim = case["claim"]
+    post = case.get("postponement", {}) or {}
     filing = case.get("filing", {})
-    decl = case.get("declaration", {})
     cn = _case_name(case)
 
-    declarant = decl.get("declarant_name", p["name"])
-    content = decl.get("content", claim.get("reason", ""))
+    requester = post.get("requester_name") or p["name"]
+    role = (post.get("role") or "plaintiff").strip().lower()
+    mailing = post.get("mailing_address") or ", ".join(x for x in [
+        p.get("street", ""),
+        p.get("city", ""),
+        f"{p.get('state', 'CA')} {p.get('zip', '')}".strip(),
+    ] if x)
+
+    served   = [s for s in (post.get("served") or []) if s.get("name")][:2]
+    unserved = [n for n in (post.get("unserved_names") or []) if n][:2]
+    unknown  = [n for n in (post.get("unknown_names") or []) if n][:2]
+    status = post.get("service_status") or ("served" if served else "")
+
+    def srv(i, key):
+        return served[i].get(key, "") if i < len(served) else ""
+
+    def nth(seq, i):
+        return seq[i] if i < len(seq) else ""
 
     values = {
         # Caption
-        "SC-150[0].Page1[0].Caption_sf[0].supcourt[0].CourtInfo[0]":              _court_info(case),
-        "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseNumber[0]":       case.get("case_number", ""),
-        "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseName[0]":         cn,
+        "SC-150[0].Page1[0].Caption_sf[0].supcourt[0].CourtInfo[0]":        _court_info(case),
+        "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseNumber[0]": case.get("case_number", ""),
+        "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseName[0]":   cn,
 
-        # Section 1: declarant identifies themselves
-        "SC-150[0].Page1[0].List1[0].item1[0].FillText01[0]": declarant,
-        "SC-150[0].Page1[0].List1[0].item1[0].FillText03[0]": claim.get("incident_date", ""),
-        "SC-150[0].Page1[0].List1[0].item1[0].FillText04[0]": content,
+        # 1. My name is / mailing address / phone / plaintiff-or-defendant
+        "SC-150[0].Page1[0].List1[0].item1[0].FillText01[0]": requester,
+        "SC-150[0].Page1[0].List1[0].item1[0].FillText03[0]": mailing,
+        "SC-150[0].Page1[0].List1[0].item1[0].FillText04[0]": post.get("phone", p.get("phone", "")),
+        "SC-150[0].Page1[0].List1[0].item1[0].CheckBox01[0]": "/1" if role == "plaintiff" else "/Off",
+        "SC-150[0].Page1[0].List1[0].item1[0].CheckBox01[1]": "/2" if role == "defendant" else "/Off",
 
-        # Additional paragraphs (optional)
-        "SC-150[0].Page1[0].List2[0].item2[0].FillText05[0]": decl.get("paragraph_2", ""),
-        "SC-150[0].Page1[0].List3[0].item3[0].FillText06[0]": decl.get("paragraph_3", ""),
-        "SC-150[0].Page1[0].List4[0].item4[0].FillText08[0]": decl.get("paragraph_4", ""),
-        "SC-150[0].Page1[0].List5[0].item5[0].FillText15[0]": decl.get("paragraph_5", ""),
+        # 2. My trial is now scheduled for (date)
+        "SC-150[0].Page1[0].List2[0].item2[0].FillText05[0]": post.get("current_trial_date", ""),
 
-        # Signature
-        "SC-150[0].Page1[0].sign[0].Date1[0]":      filing.get("filing_date", ""),
-        "SC-150[0].Page1[0].sign[0].printname[0]":  declarant,
+        # 3. I ask the court to postpone my trial until (approximate date)
+        "SC-150[0].Page1[0].List3[0].item3[0].FillText06[0]": post.get("requested_date", ""),
+
+        # 4. I am asking for this postponement because (explain)
+        "SC-150[0].Page1[0].List4[0].item4[0].FillText08[0]": post.get("reason", ""),
+
+        # 5. If trial is within 10 days, why the request wasn't made sooner
+        "SC-150[0].Page1[0].List5[0].item5[0].FillText15[0]": post.get("late_reason", ""),
+
+        # 6. Has your claim been served?
+        # 6a. No — I am a defendant and have not filed a claim
+        "SC-150[0].Page1[0].List6[0].Lia[0].CheckBox04[0]": "/1" if status == "not_filed" else "/Off",
+        # 6b. Yes — the parties listed below have been served
+        "SC-150[0].Page1[0].List6[0].Lib[0].CheckBox04[0]": "/2" if status == "served" else "/Off",
+        "SC-150[0].Page1[0].List6[0].Lib[0].sublistb[0].Li1[0].FillText1[0]":  srv(0, "name"),
+        "SC-150[0].Page1[0].List6[0].Lib[0].sublistb[0].Li1[0].FillText2[0]":  srv(0, "county"),
+        "SC-150[0].Page1[0].List6[0].Lib[0].sublistb[0].Li1[0].FillText3[0]":  srv(0, "date"),
+        "SC-150[0].Page1[0].List6[0].Lib[0].sublistb[0].Li2[0].FillText16[0]": srv(1, "name"),
+        "SC-150[0].Page1[0].List6[0].Lib[0].sublistb[0].Li2[0].FillText17[0]": srv(1, "county"),
+        "SC-150[0].Page1[0].List6[0].Lib[0].sublistb[0].Li2[0].FillText18[0]": srv(1, "date"),
+        # 6c. No — the parties listed below have not been served
+        "SC-150[0].Page1[0].List6[0].Lic[0].CheckBox10[0]": "/3" if status == "not_served" else "/Off",
+        "SC-150[0].Page1[0].List6[0].Lic[0].FillText19[0]": nth(unserved, 0),
+        "SC-150[0].Page1[0].List6[0].Lic[0].FillText20[0]": nth(unserved, 1),
+        # 6d. I do not know — clerk mailed the claim
+        "SC-150[0].Page1[0].List6[0].Lid[0].CheckBox11[0]": "/4" if status == "unknown" else "/Off",
+        "SC-150[0].Page1[0].List6[0].Lid[0].FillText21[0]": nth(unknown, 0),
+        "SC-150[0].Page1[0].List6[0].Lid[0].FillText22[0]": nth(unknown, 1),
+
+        # Signature (declaration under penalty of perjury)
+        "SC-150[0].Page1[0].sign[0].Date1[0]":     post.get("request_date", filing.get("filing_date", "")),
+        "SC-150[0].Page1[0].sign[0].printname[0]": requester,
     }
 
     _write_pdf(template_path, output_path, values)
     print(f"  ✓ SC-150  → {output_path}")
 
 
+def has_postponement(case: dict) -> bool:
+    """True if the case has enough postponement data to generate an SC-150."""
+    post = case.get("postponement", {}) or {}
+    return bool((post.get("reason") or "").strip() or (post.get("requested_date") or "").strip())
+
+
 # ─────────────────────────────────────────────────────────────
 # SC-107  Small Claims Subpoena and Declaration
 # ─────────────────────────────────────────────────────────────
 
-def fill_sc107(case, template_path, output_path):
-    """Fill SC-107 subpoena using `case['subpoena']` fields.
+_SC107_DEFAULT_GOOD_CAUSE = (
+    "The records requested are in the exclusive possession and control of the "
+    "subpoenaed agency and cannot be obtained by any other means. The records "
+    "are necessary to prepare for trial because they document the sweep at "
+    "issue, the officers and employees who carried it out, the property that "
+    "was seized or destroyed, and the policies under which the sweep was "
+    "conducted."
+)
 
-    We populate the case caption, party names, recipient/custodian/service
-    address, the requested production list (joined into a text area), and
-    signature/date fields. The SC-107 template contains many widget names;
-    we set the most useful editable fields so the form is usable.
-    """
-    p = case["plaintiff"]
-    d = case.get("defendant", DEFENDANT_DEFAULTS["city_of_oakland"])
+_SC107_DEFAULT_MATERIALITY = (
+    "This case concerns the seizure and destruction of plaintiff's personal "
+    "property during an encampment sweep. The records requested show what "
+    "happened during the sweep, who ordered and carried it out, what property "
+    "was taken, whether the defendant followed its own policies and the "
+    "requirements of due process, and the value and disposition of the "
+    "property. Each category of records bears directly on the defendant's "
+    "liability and on plaintiff's damages."
+)
+
+
+def _render_sc107_attachment_pages(case, output_path):
+    """Render Attachment 2a, 3, and 4 pages for the SC-107 via reportlab."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen.canvas import Canvas
+    from reportlab.lib.units import inch
+    from reportlab.lib.utils import simpleSplit
+
     sub = case.get("subpoena", {}) or {}
-
     requests = [r for r in sub.get("requests", []) if r]
-    requests_text = "\n".join(requests)
+    good_cause = (sub.get("good_cause") or "").strip() or _SC107_DEFAULT_GOOD_CAUSE
+    materiality = (sub.get("materiality") or "").strip() or _SC107_DEFAULT_MATERIALITY
 
+    c = Canvas(output_path, pagesize=letter)
+    width, height = letter
+    margin = inch * 0.75
+    body_w = width - 2 * margin
+
+    def header(label):
+        y = height - margin
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(margin, y, f"ATTACHMENT {label}")
+        c.setFont("Helvetica", 10)
+        y -= 15
+        c.drawString(margin, y, "to Form SC-107, Declaration in Support of Small Claims Subpoena")
+        y -= 14
+        c.drawString(margin, y, f"Case name: {_case_name(case)}")
+        y -= 14
+        c.drawString(margin, y, f"Case number: {case.get('case_number', '') or '____________________'}")
+        y -= 26
+        return y
+
+    def attachment(label, blocks):
+        y = header(label)
+        c.setFont("Helvetica", 11)
+        for block in blocks:
+            for line in simpleSplit(block, "Helvetica", 11, body_w):
+                if y < margin:
+                    c.showPage()
+                    y = header(f"{label} (continued)")
+                    c.setFont("Helvetica", 11)
+                c.drawString(margin, y, line)
+                y -= 14
+            y -= 7
+        c.showPage()
+
+    attachment("2a", [
+        "Documents and other things to be produced by the witness (SC-107, item 2a):",
+    ] + ([f"{i}. {r}" for i, r in enumerate(requests, 1)] or ["(No documents specified.)"]))
+
+    attachment("3", [
+        "Good cause exists for the production of the documents and other things "
+        "described in item 2 for the following reasons (SC-107, item 3):",
+        good_cause,
+    ])
+
+    attachment("4", [
+        "These documents are material to the issues involved in this case for "
+        "the following reasons (SC-107, item 4):",
+        materiality,
+    ])
+
+    c.save()
+
+
+def fill_sc107(case, template_path, output_path):
+    """Prepare the SC-107 subpoena package: checkboxes only + attachments.
+
+    The form's text fields are intentionally left blank. Only the "Continued
+    on Attachment" checkboxes for items 2a, 3, and 4 (plus the item 2a "For
+    trial or hearing" box) are checked, and the substantive content — the
+    document requests, good cause, and materiality — is rendered on separate
+    Attachment 2a / 3 / 4 pages appended behind the form.
+    """
     values = {
-        # Header / caption: party names + case number
-        "SC-107[0].Page2[0].Header[0].TitlePartyName[0].Party1_ft[0]": p.get("name", ""),
-        "SC-107[0].Page2[0].Header[0].TitlePartyName[0].Party2_ft[0]": d.get("name", ""),
-        "SC-107[0].Page2[0].Header[0].CaseNumber[0].CaseNumber_ft[0]": case.get("case_number", ""),
-
-        # Caption lines on page 1
-        "SC-107[0].Page1[0].Caption_sf[0].Plaintiff[0].Gr1[0].T813[0]": p.get("name", ""),
-        "SC-107[0].Page1[0].Caption_sf[0].Defendant[0].Gr3[0].T9[0]": d.get("name", ""),
-
-        # Recipient / custodian / service location
-        "SC-107[0].Page1[0].List1[0].Lib[0].Field3[0]": sub.get("to", ""),
-        "SC-107[0].Page1[0].List2[0].Field4[0]": sub.get("custodian", ""),
-        "SC-107[0].Page1[0].List2[0].Field5[0]": sub.get("service_location", ""),
-
-        # Put the requests into a large free-text area on page 3
-        "SC-107[0].Page3[0].List3[0].Lih[0].TextField51[0]": requests_text,
-
-        # Signature block (date + printed name)
-        "SC-107[0].Page2[0].Sign[0].Date1[0]": case.get("filing", {}).get("filing_date", ""),
-        "SC-107[0].Page2[0].Sign[0].PrintName[0]": p.get("name", ""),
+        # Item 2a: "For trial or hearing" + "Continued on Attachment 2a."
+        "SC-107[0].Page2[0].List2[0].Lia[0].CB\\.2\\.3\\.1\\.0[0]": "/Yes",
+        "SC-107[0].Page2[0].List2[0].Lia[0].CB\\.2\\.3\\.1\\.1[0]": "/Yes",
+        # Item 3: "Continued on Attachment 3."
+        "SC-107[0].Page2[0].List3[0].item3[0].CB\\.2\\.30[0]": "/Yes",
+        # Item 4: "Continued on Attachment 4."
+        "SC-107[0].Page2[0].List4[0].item4[0].CB\\.222[0]": "/Yes",
     }
 
     _write_pdf(template_path, output_path, values)
-    print(f"  ✓ SC-107  → {output_path}")
+
+    # Render the attachment pages and append them behind the form.
+    att_path = output_path + ".attachments.pdf"
+    _render_sc107_attachment_pages(case, att_path)
+    merged = PdfWriter()
+    merged.append(PdfReader(output_path))
+    merged.append(PdfReader(att_path))
+    with open(output_path, "wb") as f:
+        merged.write(f)
+    try:
+        os.remove(att_path)
+    except OSError:
+        pass
+    print(f"  ✓ SC-107  → {output_path} (boxes checked; Attachments 2a, 3, 4 appended)")
+
+
+# ─────────────────────────────────────────────────────────────
+# SC-109  Authorization to Appear (Small Claims)
+# ─────────────────────────────────────────────────────────────
+
+def fill_sc109(case, template_path, output_path):
+    """Fill SC-109 asking the court to let a helper assist the plaintiff.
+
+    Uses `case['assistant']` (name, address, relationship, reason). Per the
+    form's own instructions, item 3 is skipped and item 4 — the request to
+    assist a plaintiff or defendant who cannot properly present their claim
+    or defense (Code Civ. Proc. § 116.540) — is checked and explained.
+    """
+    p = case["plaintiff"]
+    helper = case.get("assistant", {}) or {}
+
+    values = {
+        # Caption (both pages)
+        "SC-109[0].Page1[0].Right_Caption[0].County[0].CourtInfo[0]": _court_info(case),
+        "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseNumber[0]": case.get("case_number", ""),
+        "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseName[0]": _case_name(case),
+        "SC-109[0].Page2[0].Header[0].CaseName[0]": _case_name(case),
+        "SC-109[0].Page2[0].Header[0].CaseNumber[0]": case.get("case_number", ""),
+
+        # 1. Helper's name, address, and relationship to the plaintiff
+        "SC-109[0].Page1[0].List1[0].li1[0].NameField[0]": helper.get("name", ""),
+        "SC-109[0].Page1[0].List1[0].li1[0].Address[0]": helper.get("address", ""),
+        "SC-109[0].Page1[0].List1[0].li1[0].RelateField[0]": helper.get("relationship", ""),
+
+        # 2. Appearing for the plaintiff
+        "SC-109[0].Page1[0].List2[0].li1[0].PltfCheck[0]": "/1",
+        "SC-109[0].Page1[0].List2[0].li1[0].PltfName[0]": p.get("name", ""),
+
+        # 4. Request to assist a party who cannot properly present their
+        #    claim or defense (item 3 intentionally left blank)
+        "SC-109[0].Page2[0].List4[0].li1[0].Ch4[0]": "/1",
+        "SC-109[0].Page2[0].List4[0].li1[0].Field12[0]": helper.get("reason", ""),
+
+        # 5. Date + printed name (the helper signs)
+        "SC-109[0].Page2[0].List5[0].li1[0].FillText8[0]": helper.get("date", case.get("filing", {}).get("filing_date", "")),
+        "SC-109[0].Page2[0].List5[0].li1[0].FillText9[0]": helper.get("name", ""),
+    }
+
+    _write_pdf(template_path, output_path, values)
+    print(f"  ✓ SC-109  → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -771,7 +965,10 @@ def fill_case(case_path):
     fill_fw001(case,  TEMPLATES["fw001"],  f"output/{name_slug}_fw001.pdf",  FIELD_META["fw001"])
     fill_fw003(case,  TEMPLATES["fw003"],  f"output/{name_slug}_fw003.pdf")
     fill_sc112a(case, TEMPLATES["sc112a"], f"output/{name_slug}_sc112a.pdf")
-    fill_sc150(case,  TEMPLATES["sc150"],  f"output/{name_slug}_sc150.pdf")
+
+    # SC-150 Request to Postpone Trial — only if case has postponement data
+    if has_postponement(case):
+        fill_sc150(case, TEMPLATES["sc150"], f"output/{name_slug}_sc150.pdf")
 
     # Proof of Service — only if case has service data
     if case.get("service", {}).get("service_date"):
@@ -862,6 +1059,20 @@ CASE_TEMPLATE = {
             "I declare under penalty of perjury under the laws of the State of California "
             "that the foregoing is true and correct."
         ),
+    },
+
+    "postponement": {
+        "_comment": "Optional — fill only to generate SC-150 Request to Postpone Trial",
+        "role":               "plaintiff",
+        "current_trial_date": "",
+        "requested_date":     "",
+        "reason":             "",
+        "late_reason":        "",
+        "service_status":     "",
+        "served":             [],
+        "unserved_names":     [],
+        "unknown_names":      [],
+        "request_date":       "",
     },
 }
 
