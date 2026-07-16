@@ -62,6 +62,24 @@ def _normalize_plain_language(text: str) -> str:
     return text
 
 
+def _ai_cleanup_summary(text: str) -> str:
+    """Lightweight, local AI-style cleanup for claimant summary text."""
+    raw = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not raw:
+        return ""
+
+    # Preserve sentence-level facts but normalize capitalization/punctuation.
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", raw) if p.strip()]
+    if not parts:
+        parts = [raw]
+    cleaned = [_normalize_plain_language(p) for p in parts]
+    out = " ".join(cleaned).strip()
+
+    # Remove accidental duplicate punctuation from pasted text.
+    out = re.sub(r"([.!?]){2,}", r"\1", out)
+    return out
+
+
 def _build_guided_declaration(text: str, answers: dict) -> str:
     intro = [
         "I am the plaintiff in this action.",
@@ -2034,6 +2052,13 @@ with tab_manual:
         height=120,
         key="manual_claim_reason",
     )
+    if st.button("✨ Clean Up Summary", key="manual_claim_reason_clean"):
+        cleaned_summary = _ai_cleanup_summary(st.session_state.get("manual_claim_reason", ""))
+        if cleaned_summary:
+            st.session_state["manual_claim_reason"] = cleaned_summary
+            st.rerun()
+        else:
+            st.info("Enter a brief summary first, then use Clean Up Summary.")
 
     # ── List your damages (used on the claim form, declaration, SC-100) ─
     st.divider()
