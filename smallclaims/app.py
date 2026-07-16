@@ -2224,6 +2224,11 @@ with tab_manual:
         "**45 days** to respond. Once the claim is rejected — or 45 days "
         "pass — move to Step 3."
     )
+    govt_claim_date = st.text_input(
+        "Date that Claim Was Given To Defendant",
+        placeholder="MM/DD/YYYY",
+        key="manual_govt_claim_date",
+    )
 
     # ════════════════════════════════════════════════════
     # STEP 3 — FILL AND FILE LAWSUIT
@@ -2232,8 +2237,8 @@ with tab_manual:
     st.header("Step 3 — Fill and File Lawsuit")
     st.caption(
         "After the claim is rejected (or 45 days pass with no response), file in "
-        "small claims court. Name the defendant(s), pick the court, set your "
-        "dates, itemize the property, and generate the filing packet: SC-100 "
+        "small claims court. Name the defendant(s), pick the court, "
+        "itemize the property, and generate the filing packet: SC-100 "
         "(+ SC-100A), FW-001, FW-003, and SC-112A."
     )
 
@@ -2276,16 +2281,6 @@ with tab_manual:
         f"Court: **Superior Court of California, County of {manual_court['county']}** · "
         f"{manual_court['address']}, {manual_court['city']}, CA {manual_court['zip']}"
     )
-
-    fd1, fd2 = st.columns(2)
-    with fd1:
-        filing_date = st.text_input("Filing Date *", placeholder="MM/DD/YYYY", key="manual_filing_date")
-    with fd2:
-        govt_claim_date = st.text_input(
-            "Govt Claim Filed with City Clerk *", placeholder="MM/DD/YYYY",
-            help="The date you filed (or will file) the Step 2 government claim.",
-            key="manual_govt_claim_date",
-        )
     damages_calc = st.text_area(
         "How Damages Are Calculated",
         placeholder=(
@@ -2355,7 +2350,7 @@ with tab_manual:
                 "items":                 _items_from_editor(),
             },
             "filing": {
-                "filing_date":      filing_date.strip(),
+                "filing_date":      "",
                 "demanded_payment": True,
             },
             "fee_waiver": {
