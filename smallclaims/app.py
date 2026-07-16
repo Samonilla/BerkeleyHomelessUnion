@@ -1919,7 +1919,8 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
             agent_city_key = f"{kp}_agent_city"
             agent_zip_key = f"{kp}_agent_zip"
 
-            auto_agent_name = f"{name_v.strip()}, Front Desk Clerk" if name_v.strip() else ""
+            auto_agent_name = name_v.strip()
+            auto_agent_title = "Front Desk Clerk"
             auto_agent_street = street_v.strip()
             auto_agent_city = city_v.strip()
             auto_agent_zip = zip_v.strip()
@@ -1928,6 +1929,8 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
             # so users can tab through without losing edits.
             if not str(st.session_state.get(agent_name_key, "")).strip():
                 st.session_state[agent_name_key] = auto_agent_name
+            if not str(st.session_state.get(agent_title_key, "")).strip():
+                st.session_state[agent_title_key] = auto_agent_title
             if not str(st.session_state.get(agent_street_key, "")).strip():
                 st.session_state[agent_street_key] = auto_agent_street
             if not str(st.session_state.get(agent_city_key, "")).strip():
