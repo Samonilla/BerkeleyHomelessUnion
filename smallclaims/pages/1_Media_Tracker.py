@@ -18,6 +18,11 @@ import streamlit as st
 
 st.set_page_config(page_title="BHU Media Tracker", page_icon="📰", layout="wide")
 
+if not st.session_state.get("bhu_admin_user"):
+    st.title("📰 Media Coverage Tracker")
+    st.info("Sign in through the BHU app to view the media tracker under the shared officer login.")
+    st.stop()
+
 # Sanitized public feed (no contact info) published by the BHU media scanner.
 FEED = "https://bhu-media-tracker.vercel.app/feed/data.json"
 
