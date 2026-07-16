@@ -48,6 +48,7 @@ _META_FW001 = str(HERE / "field_meta" / "fw001_fields.json")
 _TPL = HERE / "templates"
 _ADMIN_COOKIE_NAME = "bhu_admin_session"
 _ADMIN_COOKIE_DAYS = 30
+_CLAIMANT_COOKIE_NAME = "bhu_claimant_case"
 _cookie_manager = CookieManager(key="bhu_admin_cookie")
 
 
@@ -920,7 +921,7 @@ def _blank_items_editor_df() -> pd.DataFrame:
         {
             "Description": ["", "", ""],
             "Value ($)": ["", "", ""],
-            "Condition": ["New", "Good", "Fair"],
+            "Condition": ["", "", ""],
         }
     )
 
@@ -949,7 +950,7 @@ def _normalize_items_editor_df(raw_value) -> pd.DataFrame:
             df[col] = ""
 
     if "Condition" in df.columns:
-        df["Condition"] = df["Condition"].replace("", "Good").fillna("Good")
+        df["Condition"] = df["Condition"].fillna("")
 
     return df[_ITEMS_EDITOR_COLUMNS]
 
@@ -976,12 +977,12 @@ def _resume_case_defaults(case: dict) -> dict:
         {
             "Description": str(item.get("description") or "").strip(),
             "Value ($)": str(item.get("value") or "").strip(),
-            "Condition": str(item.get("condition") or "").strip() or "Good",
+            "Condition": str(item.get("condition") or "").strip(),
         }
         for item in items
     ]
     if not item_rows:
-        item_rows = [{"Description": "", "Value ($)": "", "Condition": "New"} for _ in range(3)]
+        item_rows = [{"Description": "", "Value ($)": "", "Condition": ""} for _ in range(3)]
 
     defaults = {
         "manual_name": plaintiff.get("name", ""),
@@ -1200,6 +1201,7 @@ def _remember_admin_session(username: str) -> None:
             _ADMIN_COOKIE_NAME,
             cookie_value,
             expires_at=expires_at,
+            max_age=_ADMIN_COOKIE_DAYS * 24 * 60 * 60,
             path="/",
             secure=True,
             same_site="strict",
@@ -1213,6 +1215,43 @@ def _forget_admin_session() -> None:
         _cookie_manager.delete(_ADMIN_COOKIE_NAME)
     except Exception:
         pass
+
+
+def _remember_claimant_case(case_id: str) -> None:
+    token = str(case_id or "").strip()
+    if not token:
+        return
+    try:
+        _cookie_manager.set(
+            _CLAIMANT_COOKIE_NAME,
+            token,
+            max_age=60 * 24 * 60 * 60,
+            path="/",
+            secure=True,
+            same_site="strict",
+        )
+    except Exception:
+        pass
+
+
+def _restore_claimant_case_from_cookie() -> None:
+    # Only auto-restore when intake fields are still empty on this session.
+    if st.session_state.get("manual_resume_case"):
+        return
+    if any(
+        str(st.session_state.get(k, "")).strip()
+        for k in ("manual_name", "manual_claim_reason", "manual_claim_amount")
+    ):
+        return
+    try:
+        token = _cookie_manager.get(_CLAIMANT_COOKIE_NAME)
+    except Exception:
+        return
+    if not token:
+        return
+    case = _find_resume_case(str(token))
+    if case:
+        _apply_resume_case(case)
 
 
 def _dashboard_requested() -> bool:
@@ -1682,6 +1721,7 @@ def _render_admin_portal(user: str) -> None:
 
 _pop = st.popover if hasattr(st, "popover") else (lambda label, **_k: st.expander(label))
 _restore_admin_session_from_cookie()
+_restore_claimant_case_from_cookie()
 if st.session_state.get("bhu_admin_user") and _dashboard_requested():
     st.session_state["bhu_view_mode"] = "dashboard"
 _title_l, _title_r = st.columns([5, 1])
@@ -1901,9 +1941,9 @@ with tab_manual:
     # ════════════════════════════════════════════════════
     st.header("Step 1 — Enter Your Information")
     st.caption(
-        "Start by entering claimant information, incident details, and damages. "
-        "If your case is against a California city or public agency, Step 2 "
-        "lets you create the government claim demand before filing suit."
+        "Start by entering claimant information. In Step 2, enter incident "
+        "details and list your damages, then optionally create a government "
+        "claim demand before filing suit."
     )
 
     # ── Your name and information ──────────────────────────────────────
@@ -1926,8 +1966,20 @@ with tab_manual:
             zip_  = st.text_input("ZIP", placeholder="94609", key="manual_zip")
         email = st.text_input("Email (optional)", placeholder="", key="manual_email")
 
-    # ── Incident & Claim (shared by the claim form and the lawsuit) ────
+    # ════════════════════════════════════════════════════
+    # STEP 2 — MAKE A DEMAND
+    # ════════════════════════════════════════════════════
     st.divider()
+    st.header("Step 2 — Make a Demand")
+    st.caption(
+        "Enter incident details and list your damages below. This is also a "
+        "separate, optional path for cases against a California city or other "
+        "public entity, where a government tort claim is usually required "
+        "first (Gov. Code §§ 905, 910). If you are not suing the government, "
+        "you can skip the claim-form generation tools and go to Step 3."
+    )
+
+    # ── Incident & Claim (shared by the claim form and the lawsuit) ────
     st.subheader("Incident & Claim")
     c1, c2 = st.columns(2)
     with c1:
@@ -1966,10 +2018,13 @@ with tab_manual:
         key="manual_claim_reason",
     )
 
-    # ── Itemized property (used on the claim form, declaration, SC-100) ─
+    # ── List your damages (used on the claim form, declaration, SC-100) ─
     st.divider()
-    st.subheader("Itemized Property")
-    st.caption("List each item that was destroyed, its estimated value, and its condition before the loss.")
+    st.subheader("List your Damages")
+    st.caption(
+        "Itemize damaged or lost property and include intangible damages. "
+        "Leave Value ($) blank for intangible damages if needed."
+    )
     _raw_items_value = st.session_state.get("manual_items_editor_data")
     if _raw_items_value is None:
         _raw_items_value = st.session_state.get("manual_items_editor")
@@ -1983,7 +2038,7 @@ with tab_manual:
             "Value ($)": st.column_config.TextColumn(width="small"),
             "Condition": st.column_config.SelectboxColumn(
                 width="small",
-                options=["New", "Good", "Fair", "Salvage"],
+                options=["", "New", "Good", "Fair", "Poor", "N/A (intangible)"],
             ),
         },
         hide_index=True,
@@ -2000,7 +2055,7 @@ with tab_manual:
             out.append({
                 "description": description,
                 "value": str(r.get("Value ($)", "")).strip(),
-                "condition": str(r.get("Condition", "")).strip() or "Unknown",
+                "condition": str(r.get("Condition", "")).strip(),
             })
         return out
 
@@ -2032,22 +2087,6 @@ with tab_manual:
             "amount":            claim_amount.strip(),
             "items":             _items_from_editor(),
         }
-
-    # ════════════════════════════════════════════════════
-    # STEP 2 — MAKE A DEMAND
-    # ════════════════════════════════════════════════════
-    st.divider()
-    st.header("Step 2 — Make a Demand")
-    st.caption(
-        "This is a separate, optional path. Use it only if you are suing a "
-        "California city or other public entity, because those cases usually "
-        "require a government tort claim first (Gov. Code §§ 905, 910). "
-        "If you are not suing the government, skip this step and go straight "
-        "to Step 3. You can either upload your jurisdiction's own claim form "
-        "(PDF) to auto-fill it, or generate a generic claim form to file with "
-        "the City Clerk. The entity being claimed against comes from the "
-        "Defendant section in Step 3."
-    )
 
     # ── Option A: your jurisdiction's own claim form (PDF upload) ──────
     st.divider()
@@ -2338,6 +2377,15 @@ with tab_manual:
         manual_case["defendant"].get("name", ""),
         any(dd.get("name") for dd in manual_case.get("additional_defendants") or []),
     ])
+
+    # Keep claimant progress durable across refreshes/deploys.
+    if _manual_has_content:
+        try:
+            _save_manual_case(manual_case)
+            _remember_claimant_case(manual_case["internal_case_number"])
+        except Exception:
+            pass
+
     # ── Handle submission / save-progress ──────────────────────────────────
     if submitted or save_progress:
         case = manual_case
@@ -2361,6 +2409,7 @@ with tab_manual:
                 case["forms_generated_at"] = datetime.now().isoformat(timespec="seconds")
                 try:
                     _save_manual_case(case)
+                    _remember_claimant_case(case["internal_case_number"])
                 except Exception:
                     pass
                 _show_downloads(pdfs, _slug(name.strip()))
