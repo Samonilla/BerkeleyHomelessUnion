@@ -1509,9 +1509,18 @@ with _title_l:
 with _title_r:
     _signed_in = st.session_state.get("bhu_admin_user")
     if _signed_in:
+        if st.button(
+            "Dashboard",
+            use_container_width=True,
+            key="portal_dashboard",
+            help="Open the officer dashboard with claims data and the media tracker.",
+        ):
+            st.session_state["bhu_view_mode"] = "dashboard"
+            st.rerun()
         with _pop(f"👤 {_signed_in}", use_container_width=True):
             if st.button("Sign out", use_container_width=True, key="portal_signout"):
                 st.session_state.pop("bhu_admin_user", None)
+                st.session_state.pop("bhu_view_mode", None)
                 st.rerun()
     else:
         with _pop("🔐 Sign In", use_container_width=True):
@@ -1541,7 +1550,7 @@ with _title_r:
                     else:
                         st.error("Wrong username or password.")
 
-if st.session_state.get("bhu_admin_user"):
+if st.session_state.get("bhu_admin_user") and st.session_state.get("bhu_view_mode") == "dashboard":
     _render_admin_portal(st.session_state["bhu_admin_user"])
     st.stop()
 
