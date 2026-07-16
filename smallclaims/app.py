@@ -2293,28 +2293,47 @@ with tab_manual:
     # ── Fee Waiver ─────────────────────────────────────────────────────
     st.divider()
     st.subheader("Fee Waiver")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        fw_basis = st.radio(
-            "Basis",
-            ["5c — Cannot afford fees", "5a — Public benefits", "5b — Income below threshold"],
-            help="5c is correct for most encampment sweep clients.",
-            key="manual_fw_basis",
-        )
+    fw_basis = st.radio(
+        "Basis",
+        ["5a — Public benefits", "5b — Income below threshold", "5c — Cannot afford fees"],
+        help="Choose 5a first when the client receives qualifying public benefits.",
+        key="manual_fw_basis",
+    )
+
+    recv_medi_cal = bool(st.session_state.get("manual_recv_medi_cal", False))
+    recv_snap = bool(st.session_state.get("manual_recv_snap", False))
+    recv_calworks = bool(st.session_state.get("manual_recv_calworks", False))
+    income_source = str(st.session_state.get("manual_income_source", ""))
+    income_amount = str(st.session_state.get("manual_income_amount", ""))
+    total_income = str(st.session_state.get("manual_total_income", ""))
+    exp_food = str(st.session_state.get("manual_exp_food", "0"))
+    exp_medical = str(st.session_state.get("manual_exp_medical", "0"))
+    exp_transport = str(st.session_state.get("manual_exp_transport", "0"))
+    exp_housing = str(st.session_state.get("manual_exp_housing", "0"))
+    total_expenses = str(st.session_state.get("manual_total_expenses", ""))
+
+    if fw_basis.startswith("5a"):
         st.markdown("**Public benefits:**")
-        recv_medi_cal = st.checkbox("Medi-Cal", key="manual_recv_medi_cal")
-        recv_snap     = st.checkbox("CalFresh / SNAP", key="manual_recv_snap")
-        recv_calworks = st.checkbox("CalWORKS", key="manual_recv_calworks")
-    with c2:
-        income_source = st.text_input("Income Source", placeholder="General Assistance, SSI…", key="manual_income_source")
-        income_amount = st.text_input("Monthly Income ($)", placeholder="400", key="manual_income_amount")
-        total_income  = st.text_input("Total Monthly Income ($)", placeholder="400", key="manual_total_income")
-    with c3:
-        exp_food      = st.text_input("Food / Supplies ($)", value="0", key="manual_exp_food")
-        exp_medical   = st.text_input("Medical / Dental ($)", value="0", key="manual_exp_medical")
-        exp_transport = st.text_input("Transportation ($)", value="0", key="manual_exp_transport")
-        exp_housing   = st.text_input("Housing ($)", value="0", key="manual_exp_housing")
-        total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300", key="manual_total_expenses")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            recv_medi_cal = st.checkbox("Medi-Cal", key="manual_recv_medi_cal")
+        with c2:
+            recv_snap = st.checkbox("CalFresh / SNAP", key="manual_recv_snap")
+        with c3:
+            recv_calworks = st.checkbox("CalWORKS", key="manual_recv_calworks")
+    else:
+        with st.expander("Income and expenses details (for 5b/5c)", expanded=True):
+            c1, c2 = st.columns(2)
+            with c1:
+                income_source = st.text_input("Income Source", placeholder="General Assistance, SSI…", key="manual_income_source")
+                income_amount = st.text_input("Monthly Income ($)", placeholder="400", key="manual_income_amount")
+                total_income = st.text_input("Total Monthly Income ($)", placeholder="400", key="manual_total_income")
+            with c2:
+                exp_food = st.text_input("Food / Supplies ($)", value="0", key="manual_exp_food")
+                exp_medical = st.text_input("Medical / Dental ($)", value="0", key="manual_exp_medical")
+                exp_transport = st.text_input("Transportation ($)", value="0", key="manual_exp_transport")
+                exp_housing = st.text_input("Housing ($)", value="0", key="manual_exp_housing")
+                total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300", key="manual_total_expenses")
 
     _gen_col, _save_col = st.columns([3, 1])
     with _gen_col:
