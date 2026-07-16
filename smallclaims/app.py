@@ -903,6 +903,135 @@ def _load_case_records() -> list:
     return [case for _, case in _load_case_files()]
 
 
+def _resume_case_defaults(case: dict) -> dict:
+    plaintiff = case.get("plaintiff") or {}
+    claim = case.get("claim") or {}
+    filing = case.get("filing") or {}
+    fee = case.get("fee_waiver") or {}
+    declaration = case.get("declaration") or {}
+    court = case.get("court") or {}
+    incident_date = str(claim.get("incident_date") or "").strip()
+    if " – " in incident_date:
+        date_start, date_end = [part.strip() for part in incident_date.split(" – ", 1)]
+        date_range = True
+    elif " - " in incident_date:
+        date_start, date_end = [part.strip() for part in incident_date.split(" - ", 1)]
+        date_range = True
+    else:
+        date_start, date_end, date_range = incident_date, "", False
+
+    items = [item for item in (claim.get("items") or []) if str(item.get("description") or "").strip()]
+    item_rows = items or [{"Description": "", "Value ($)": "", "Condition": "New"} for _ in range(3)]
+
+    defaults = {
+        "manual_name": plaintiff.get("name", ""),
+        "manual_street": plaintiff.get("street", ""),
+        "manual_phone": plaintiff.get("phone", ""),
+        "manual_city": plaintiff.get("city", ""),
+        "manual_state": plaintiff.get("state", "CA") or "CA",
+        "manual_zip": plaintiff.get("zip", ""),
+        "manual_email": plaintiff.get("email", ""),
+        "manual_date_range": date_range,
+        "manual_date_start": date_start,
+        "manual_date_end": date_end,
+        "manual_date_single": incident_date,
+        "manual_incident_location": claim.get("incident_location", ""),
+        "manual_claim_amount": claim.get("amount", ""),
+        "manual_involved_employees": claim.get("employees", ""),
+        "manual_claim_reason": claim.get("reason", ""),
+        "manual_items_editor": pd.DataFrame(item_rows),
+        "manual_filing_date": filing.get("filing_date", ""),
+        "manual_govt_claim_date": claim.get("govt_claim_filed_date", ""),
+        "manual_declaration_text": declaration.get("content", claim.get("reason", "")),
+        "manual_fw_basis": {
+            "5a": "5a — Public benefits",
+            "5b": "5b — Income below threshold",
+        }.get(str(fee.get("basis", "5c")), "5c — Cannot afford fees"),
+        "manual_recv_medi_cal": bool(fee.get("receives_medi_cal", False)),
+        "manual_recv_snap": bool(fee.get("receives_snap", False)),
+        "manual_recv_calworks": bool(fee.get("receives_calworks", False)),
+        "manual_income_source": fee.get("income_source_1", ""),
+        "manual_income_amount": fee.get("income_amount_1", ""),
+        "manual_total_income": fee.get("total_monthly_income", ""),
+        "manual_exp_food": fee.get("expense_food", "0"),
+        "manual_exp_medical": fee.get("expense_medical", "0"),
+        "manual_exp_transport": fee.get("expense_transport", "0"),
+        "manual_exp_housing": fee.get("expense_housing", "0"),
+        "manual_total_expenses": fee.get("total_monthly_expenses", ""),
+        "manual_resume_identifier": str(case.get("internal_case_number") or "").strip(),
+        "manual_resume_case": case,
+    }
+
+    county = (court.get("county") or "").strip()
+    if county:
+        defaults["manual_county"] = county
+        houses = courthouses_for_county(county)
+        court_name = str(court.get("name") or "").strip().lower()
+        court_address = str(court.get("address") or "").strip().lower()
+        court_city = str(court.get("city") or "").strip().lower()
+        for idx, house in enumerate(houses):
+            if (
+                str(house.get("name") or "").strip().lower() == court_name
+                or str(house.get("address") or "").strip().lower() == court_address
+                or str(house.get("city") or "").strip().lower() == court_city
+            ):
+                defaults["manual_house"] = idx
+                break
+
+    defendants = [case.get("defendant") or DEFENDANT_DEFAULTS["city_of_oakland"]]
+    defendants.extend(case.get("additional_defendants") or [])
+    defaults["manual_def_ids"] = list(range(len(defendants)))
+    defaults["manual_def_next"] = len(defendants)
+
+    for idx, defendant in enumerate(defendants):
+        prefix = f"manual_def{idx}"
+        defaults[f"{prefix}_city_sel"] = _CUSTOM_DEFENDANT
+        defaults[f"{prefix}_custom_name"] = defendant.get("name", "")
+        defaults[f"{prefix}_custom_street"] = defendant.get("address", defendant.get("street", ""))
+        defaults[f"{prefix}_custom_city"] = defendant.get("city", "")
+        defaults[f"{prefix}_custom_state"] = defendant.get("state", "CA") or "CA"
+        defaults[f"{prefix}_custom_zip"] = defendant.get("zip", "")
+        if idx == 0:
+            defaults[f"{prefix}_custom_agent_name"] = defendant.get("agent_name", "")
+            defaults[f"{prefix}_custom_agent_title"] = defendant.get("agent_title", "")
+            defaults[f"{prefix}_custom_agent_street"] = defendant.get("agent_address", "")
+            defaults[f"{prefix}_custom_agent_city"] = defendant.get("agent_city", "")
+            defaults[f"{prefix}_custom_agent_zip"] = defendant.get("agent_zip", "")
+        else:
+            defaults[f"{prefix}_custom_phone"] = defendant.get("phone", "")
+            defaults[f"{prefix}_custom_mailing"] = defendant.get("mailing", "")
+            defaults[f"{prefix}_custom_job_title"] = defendant.get("job_title", "")
+
+    return defaults
+
+
+def _apply_resume_case(case: dict) -> None:
+    for key, value in _resume_case_defaults(case).items():
+        st.session_state[key] = value
+
+
+def _resume_case_label(case: dict) -> str:
+    plaintiff = case.get("plaintiff") or {}
+    internal = case.get("internal_case_number") or "—"
+    return f"{plaintiff.get('name', 'Unnamed claimant')} · {internal}"
+
+
+def _find_resume_case(identifier: str) -> dict | None:
+    token = _slug(identifier)
+    if not token:
+        return None
+    for case in _load_case_records():
+        plaintiff = (case.get("plaintiff") or {}).get("name") or ""
+        candidates = {
+            _slug(str(case.get("internal_case_number") or "")),
+            _slug(plaintiff),
+            _slug(str(case.get("case_number") or "")),
+        }
+        if token in candidates:
+            return case
+    return None
+
+
 def _portal_date(s):
     s = (str(s) if s is not None else "").strip()
     if not s:
@@ -1111,6 +1240,26 @@ def _render_admin_portal(user: str) -> None:
         "generate filing packets, open the "
         f"[full case tracker]({_admin_url()})."
     )
+
+    with st.expander("Resume an intake case", expanded=False):
+        records = _load_case_records()
+        if not records:
+            st.info("No claimant records have been captured yet.")
+        else:
+            chosen = st.selectbox(
+                "Search claimant names",
+                records,
+                format_func=_resume_case_label,
+                key="portal_resume_case_choice",
+                help="Use this to jump back into a captured intake record.",
+            )
+            assert chosen is not None
+            if st.button("Use selected case in intake", key="portal_resume_use", use_container_width=True):
+                _apply_resume_case(chosen)
+                st.success(
+                    f"Loaded {_resume_case_label(chosen)} into the intake defaults. "
+                    "Sign out to continue in the intake view with this case prefilled."
+                )
 
     records = _load_case_records()
     if not records:
@@ -1365,6 +1514,42 @@ if st.session_state.get("bhu_admin_user"):
     _render_admin_portal(st.session_state["bhu_admin_user"])
     st.stop()
 
+_save_pop = st.popover if hasattr(st, "popover") else (lambda label, **_k: st.expander(label))
+top_save_l, top_save_r = st.columns([1, 1])
+with top_save_l:
+    save_progress = st.button(
+        "💾 Save Progress",
+        use_container_width=True,
+        help="Save everything entered so far without generating forms.",
+    )
+with top_save_r:
+    with _save_pop("Save where you left off", use_container_width=True):
+        saved_records = _load_case_records()
+        if not saved_records:
+            st.caption("No saved claimants yet. Save progress first.")
+        elif st.session_state.get("bhu_admin_user"):
+            saved_case = st.selectbox(
+                "Search captured claimants",
+                saved_records,
+                format_func=_resume_case_label,
+                key="resume_case_select",
+            )
+            assert saved_case is not None
+            if st.button("Load selected claimant", key="resume_case_apply", use_container_width=True):
+                _apply_resume_case(saved_case)
+                st.success(f"Loaded {_resume_case_label(saved_case)}.")
+                st.rerun()
+        else:
+            resume_code = st.text_input("Identifier code", key="resume_case_code")
+            if st.button("Load saved case", key="resume_case_apply", use_container_width=True):
+                saved_case = _find_resume_case(resume_code)
+                if not saved_case:
+                    st.error("No saved case matched that identifier code.")
+                else:
+                    _apply_resume_case(saved_case)
+                    st.success(f"Loaded {_resume_case_label(saved_case)}.")
+                    st.rerun()
+
 st.caption(
     "Generates a government claim form plus SC-100, SC-100A, FW-001, FW-003, "
     "SC-112A, and SC-150 for encampment property destruction cases in "
@@ -1510,20 +1695,21 @@ with tab_manual:
     st.subheader("Plaintiff")
     c1, c2 = st.columns(2)
     with c1:
-        name   = st.text_input("Full Legal Name *", placeholder="Jane Doe")
+        name   = st.text_input("Full Legal Name *", placeholder="Jane Doe", key="manual_name")
         street = st.text_input(
             "Street / Mailing Address",
             placeholder="c/o 1234 Telegraph Ave  (use c/o for unhoused clients)",
+            key="manual_street",
         )
-        phone  = st.text_input("Phone", placeholder="510-555-0100")
+        phone  = st.text_input("Phone", placeholder="510-555-0100", key="manual_phone")
     with c2:
-        city = st.text_input("City", placeholder="Your city")
+        city = st.text_input("City", placeholder="Your city", key="manual_city")
         cs1, cs2 = st.columns(2)
         with cs1:
-            state = st.text_input("State", value="CA")
+            state = st.text_input("State", value="CA", key="manual_state")
         with cs2:
-            zip_  = st.text_input("ZIP", placeholder="94609")
-        email = st.text_input("Email (optional)", placeholder="")
+            zip_  = st.text_input("ZIP", placeholder="94609", key="manual_zip")
+        email = st.text_input("Email (optional)", placeholder="", key="manual_email")
 
     # ── Incident & Claim (shared by the claim form and the lawsuit) ────
     st.divider()
@@ -1545,12 +1731,14 @@ with tab_manual:
         incident_location = st.text_input(
             "Location of Sweep",
             placeholder="E.g. E 12th St & 16th Ave underpass, Oakland",
+            key="manual_incident_location",
         )
     with c2:
-        claim_amount = st.text_input("Claim Amount ($) *", placeholder="10000")
+        claim_amount = st.text_input("Claim Amount ($) *", placeholder="10000", key="manual_claim_amount")
         involved_employees = st.text_input(
             "City employees or agencies involved (if known)",
             placeholder="DPW crew, police officers, contractor…",
+            key="manual_involved_employees",
         )
 
     claim_reason = st.text_area(
@@ -1560,6 +1748,7 @@ with tab_manual:
             "at [location] and destroyed Plaintiff's personal property…"
         ),
         height=120,
+        key="manual_claim_reason",
     )
 
     # ── Itemized property (used on the claim form, declaration, SC-100) ─
@@ -1567,11 +1756,14 @@ with tab_manual:
     st.subheader("Itemized Property")
     st.caption("List each item that was destroyed, its estimated value, and its condition before the loss.")
     items_df = st.data_editor(
-        pd.DataFrame({
-            "Description": ["", "", ""],
-            "Value ($)": ["", "", ""],
-            "Condition": ["New", "Good", "Fair"],
-        }),
+        st.session_state.get(
+            "manual_items_editor",
+            pd.DataFrame({
+                "Description": ["", "", ""],
+                "Value ($)": ["", "", ""],
+                "Condition": ["New", "Good", "Fair"],
+            }),
+        ),
         num_rows="dynamic",
         use_container_width=True,
         column_config={
@@ -1583,6 +1775,7 @@ with tab_manual:
             ),
         },
         hide_index=True,
+        key="manual_items_editor",
     )
 
     def _items_from_editor() -> list:
@@ -1785,17 +1978,19 @@ with tab_manual:
 
     fd1, fd2 = st.columns(2)
     with fd1:
-        filing_date = st.text_input("Filing Date *", placeholder="MM/DD/YYYY")
+        filing_date = st.text_input("Filing Date *", placeholder="MM/DD/YYYY", key="manual_filing_date")
     with fd2:
         govt_claim_date = st.text_input(
             "Govt Claim Filed with City Clerk *", placeholder="MM/DD/YYYY",
             help="The date you filed (or will file) the Step 1 government claim.",
+            key="manual_govt_claim_date",
         )
 
     declaration_text_input = st.text_area(
         "Write your declaration in your own words",
         placeholder="Start typing what happened. For example: I was present when the City took my belongings, I was not given notice, and I saw them throw away my property.",
         height=180,
+        key="manual_declaration_text",
     )
 
     if st.button("Generate declaration", use_container_width=True):
@@ -1835,34 +2030,27 @@ with tab_manual:
             "Basis",
             ["5c — Cannot afford fees", "5a — Public benefits", "5b — Income below threshold"],
             help="5c is correct for most encampment sweep clients.",
+            key="manual_fw_basis",
         )
         st.markdown("**Public benefits:**")
-        recv_medi_cal = st.checkbox("Medi-Cal")
-        recv_snap     = st.checkbox("CalFresh / SNAP")
-        recv_calworks = st.checkbox("CalWORKS")
+        recv_medi_cal = st.checkbox("Medi-Cal", key="manual_recv_medi_cal")
+        recv_snap     = st.checkbox("CalFresh / SNAP", key="manual_recv_snap")
+        recv_calworks = st.checkbox("CalWORKS", key="manual_recv_calworks")
     with c2:
-        income_source = st.text_input("Income Source", placeholder="General Assistance, SSI…")
-        income_amount = st.text_input("Monthly Income ($)", placeholder="400")
-        total_income  = st.text_input("Total Monthly Income ($)", placeholder="400")
+        income_source = st.text_input("Income Source", placeholder="General Assistance, SSI…", key="manual_income_source")
+        income_amount = st.text_input("Monthly Income ($)", placeholder="400", key="manual_income_amount")
+        total_income  = st.text_input("Total Monthly Income ($)", placeholder="400", key="manual_total_income")
     with c3:
-        exp_food      = st.text_input("Food / Supplies ($)", value="0")
-        exp_medical   = st.text_input("Medical / Dental ($)", value="0")
-        exp_transport = st.text_input("Transportation ($)", value="0")
-        exp_housing   = st.text_input("Housing ($)", value="0")
-        total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300")
+        exp_food      = st.text_input("Food / Supplies ($)", value="0", key="manual_exp_food")
+        exp_medical   = st.text_input("Medical / Dental ($)", value="0", key="manual_exp_medical")
+        exp_transport = st.text_input("Transportation ($)", value="0", key="manual_exp_transport")
+        exp_housing   = st.text_input("Housing ($)", value="0", key="manual_exp_housing")
+        total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300", key="manual_total_expenses")
 
     _gen_col, _save_col = st.columns([3, 1])
     with _gen_col:
         submitted = st.button(
             "Generate Forms", type="primary", use_container_width=True
-        )
-    with _save_col:
-        save_progress = st.button(
-            "💾 Save Progress",
-            use_container_width=True,
-            help="Save everything entered so far under your case number — no "
-                 "forms are generated. You can come back later, and officers "
-                 "can review and correct it in the case tracker.",
         )
 
     st.download_button(
