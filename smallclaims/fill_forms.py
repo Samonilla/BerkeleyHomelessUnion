@@ -142,6 +142,22 @@ def load_field_meta(json_path):
     return {item["field_id"]: item for item in fields}
 
 
+def _checkbox_value(meta, field_id, checked):
+    if checked:
+        return meta.get(field_id, {}).get("checked_value", "/Yes")
+    return meta.get(field_id, {}).get("unchecked_value", "/Off")
+
+
+def _caption_fields(case, court_key, case_number_key, case_name_key=None):
+    values = {
+        court_key: _court_info(case),
+        case_number_key: case.get("case_number", ""),
+    }
+    if case_name_key:
+        values[case_name_key] = _case_name(case)
+    return values
+
+
 # ─────────────────────────────────────────────────────────────
 # VALIDATION
 # ─────────────────────────────────────────────────────────────
@@ -262,11 +278,6 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
     claim = case["claim"]
     filing = case.get("filing", {})
 
-    def cb(fid, checked):
-        if checked:
-            return meta.get(fid, {}).get("checked_value", "/Yes")
-        return meta.get(fid, {}).get("unchecked_value", "/Off")
-
     values = {
         # Header
         "SC-100[0].Page1[0].CaptionRight[0].County[0].CourtInfo[0]": _court_info(case),
@@ -305,51 +316,51 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
         "SC-100[0].Page3[0].List3[0].Lic[0].FillField1[0]": claim.get("damages_calculation", ""),
 
         # Have you asked defendant to pay?
-        "SC-100[0].Page3[0].List4[0].Item4[0].Checkbox50[0]": cb(
+        "SC-100[0].Page3[0].List4[0].Item4[0].Checkbox50[0]": _checkbox_value(meta,
             "SC-100[0].Page3[0].List4[0].Item4[0].Checkbox50[0]",
             filing.get("demanded_payment", True),
         ),
-        "SC-100[0].Page3[0].List4[0].Item4[0].Checkbox50[1]": cb(
+        "SC-100[0].Page3[0].List4[0].Item4[0].Checkbox50[1]": _checkbox_value(meta,
             "SC-100[0].Page3[0].List4[0].Item4[0].Checkbox50[1]",
             not filing.get("demanded_payment", True),
         ),
 
         # Venue — where property was damaged
-        "SC-100[0].Page3[0].List5[0].Lib[0].Checkbox5cb[0]": cb(
+        "SC-100[0].Page3[0].List5[0].Lib[0].Checkbox5cb[0]": _checkbox_value(meta,
             "SC-100[0].Page3[0].List5[0].Lib[0].Checkbox5cb[0]", True
         ),
         "SC-100[0].Page3[0].List6[0].item6[0].ZipCode1[0]": _venue_zip(case),
 
         # Attorney-client fee dispute? No
-        "SC-100[0].Page3[0].List7[0].item7[0].Checkbox60[0]": cb(
+        "SC-100[0].Page3[0].List7[0].item7[0].Checkbox60[0]": _checkbox_value(meta,
             "SC-100[0].Page3[0].List7[0].item7[0].Checkbox60[0]", False
         ),
-        "SC-100[0].Page3[0].List7[0].item7[0].Checkbox60[1]": cb(
+        "SC-100[0].Page3[0].List7[0].item7[0].Checkbox60[1]": _checkbox_value(meta,
             "SC-100[0].Page3[0].List7[0].item7[0].Checkbox60[1]", True
         ),
 
         # Suing a public entity? Yes + claim date
-        "SC-100[0].Page3[0].List8[0].item8[0].Checkbox61[0]": cb(
+        "SC-100[0].Page3[0].List8[0].item8[0].Checkbox61[0]": _checkbox_value(meta,
             "SC-100[0].Page3[0].List8[0].item8[0].Checkbox61[0]", True
         ),
-        "SC-100[0].Page3[0].List8[0].item8[0].Checkbox61[1]": cb(
+        "SC-100[0].Page3[0].List8[0].item8[0].Checkbox61[1]": _checkbox_value(meta,
             "SC-100[0].Page3[0].List8[0].item8[0].Checkbox61[1]", False
         ),
         "SC-100[0].Page3[0].List8[0].item8[0].Date4[0]": claim.get("govt_claim_filed_date", ""),
 
         # Filed more than 12 claims this year? No
-        "SC-100[0].Page4[0].List9[0].Item9[0].Checkbox62[0]": cb(
+        "SC-100[0].Page4[0].List9[0].Item9[0].Checkbox62[0]": _checkbox_value(meta,
             "SC-100[0].Page4[0].List9[0].Item9[0].Checkbox62[0]", False
         ),
-        "SC-100[0].Page4[0].List9[0].Item9[0].Checkbox62[1]": cb(
+        "SC-100[0].Page4[0].List9[0].Item9[0].Checkbox62[1]": _checkbox_value(meta,
             "SC-100[0].Page4[0].List9[0].Item9[0].Checkbox62[1]", True
         ),
 
         # Claim for more than $2,500? Yes
-        "SC-100[0].Page4[0].List10[0].li10[0].Checkbox63[0]": cb(
+        "SC-100[0].Page4[0].List10[0].li10[0].Checkbox63[0]": _checkbox_value(meta,
             "SC-100[0].Page4[0].List10[0].li10[0].Checkbox63[0]", True
         ),
-        "SC-100[0].Page4[0].List10[0].li10[0].Checkbox63[1]": cb(
+        "SC-100[0].Page4[0].List10[0].li10[0].Checkbox63[1]": _checkbox_value(meta,
             "SC-100[0].Page4[0].List10[0].li10[0].Checkbox63[1]", False
         ),
 
@@ -365,7 +376,7 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
 
     _write_pdf(template_path, output_path, values)
     try:
-        _flatten_using_field_meta(output_path, field_meta_path)
+        _flatten_pdf(output_path)
     except Exception:
         pass
     print(f"  ✓ SC-100  → {output_path}")
@@ -381,17 +392,14 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
     fw = case.get("fee_waiver", {})
     filing = case.get("filing", {})
 
-    def cb(fid, checked):
-        if checked:
-            return meta.get(fid, {}).get("checked_value", "/Yes")
-        return meta.get(fid, {}).get("unchecked_value", "/Off")
-
     basis = fw.get("basis", "5c")  # "5a" | "5b" | "5c"
 
     values = {
-        # Header
-        "FW-001[0].Page1[0].RightCaption[0].CourtInfo[0]": _court_info(case),
-        "FW-001[0].Page1[0].RightCaption[0].CaseName[0]":  _case_name(case),
+        **_caption_fields(
+            case,
+            "FW-001[0].Page1[0].RightCaption[0].CourtInfo[0]",
+            "FW-001[0].Page1[0].RightCaption[0].CaseName[0]",
+        ),
 
         # Section 1: Petitioner info
         "FW-001[0].Page1[0].List1[0].item1[0].PetitionerName1[0]":      p["name"],
@@ -402,37 +410,37 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
         "FW-001[0].Page1[0].List1[0].item1[0].PetitionerTel[0]":        p.get("phone", ""),
 
         # Section 4: Superior Court fees
-        "FW-001[0].Page1[0].List4[0].item4[0].WaiveSuperiorCrtFee[0]": cb(
+        "FW-001[0].Page1[0].List4[0].item4[0].WaiveSuperiorCrtFee[0]": _checkbox_value(meta,
             "FW-001[0].Page1[0].List4[0].item4[0].WaiveSuperiorCrtFee[0]", True
         ),
 
         # Section 5a: Public benefits
-        "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitReceived[0]": cb(
+        "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitReceived[0]": _checkbox_value(meta,
             "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitReceived[0]", basis == "5a"
         ),
-        "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitSNAP[0]": cb(
+        "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitSNAP[0]": _checkbox_value(meta,
             "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitSNAP[0]",
             fw.get("receives_snap", False),
         ),
-        "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitMediCal[0]": cb(
+        "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitMediCal[0]": _checkbox_value(meta,
             "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitMediCal[0]",
             fw.get("receives_medi_cal", False),
         ),
-        "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitCalWORKSTANF[0]": cb(
+        "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitCalWORKSTANF[0]": _checkbox_value(meta,
             "FW-001[0].Page1[0].List5[0].Lia[0].PublicBenefitCalWORKSTANF[0]",
             fw.get("receives_calworks", False),
         ),
 
         # Section 5b: Gross income below threshold
-        "FW-001[0].Page1[0].List5[0].Lib[0].GrossMonthIncomeLess[0]": cb(
+        "FW-001[0].Page1[0].List5[0].Lib[0].GrossMonthIncomeLess[0]": _checkbox_value(meta,
             "FW-001[0].Page1[0].List5[0].Lib[0].GrossMonthIncomeLess[0]", basis == "5b"
         ),
 
         # Section 5c: Cannot afford fees (most common for our clients)
-        "FW-001[0].Page1[0].List5[0].Lic[0].IncomeInsufficientRequest[0]": cb(
+        "FW-001[0].Page1[0].List5[0].Lic[0].IncomeInsufficientRequest[0]": _checkbox_value(meta,
             "FW-001[0].Page1[0].List5[0].Lic[0].IncomeInsufficientRequest[0]", basis == "5c"
         ),
-        "FW-001[0].Page1[0].List5[0].Lic[0].FeeRequestDef[0]": cb(
+        "FW-001[0].Page1[0].List5[0].Lic[0].FeeRequestDef[0]": _checkbox_value(meta,
             "FW-001[0].Page1[0].List5[0].Lic[0].FeeRequestDef[0]",
             basis == "5c" and fw.get("waive_option", "all") == "all",
         ),
@@ -458,7 +466,7 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
 
     _write_pdf(template_path, output_path, values)
     try:
-        _flatten_using_field_meta(output_path, field_meta_path)
+        _flatten_pdf(output_path)
     except Exception:
         pass
     print(f"  ✓ FW-001  → {output_path}")
@@ -495,10 +503,12 @@ def fill_sc105(case, template_path, output_path):
     cn = _case_name(case)
 
     values = {
-        # Page 1 caption
-        "SC-105[0].Page1[0].RightCaption[0].CourtInfo[0]":  _court_info(case),
-        "SC-105[0].Page1[0].RightCaption[0].CaseNumber[0]": case.get("case_number", ""),
-        "SC-105[0].Page1[0].RightCaption[0].CaseName[0]":   cn,
+        **_caption_fields(
+            case,
+            "SC-105[0].Page1[0].RightCaption[0].CourtInfo[0]",
+            "SC-105[0].Page1[0].RightCaption[0].CaseNumber[0]",
+            "SC-105[0].Page1[0].RightCaption[0].CaseName[0]",
+        ),
 
         # Party names
         "SC-105[0].Page1[0].List1[0].Item[0].FullName3[0]": p["name"],
@@ -508,10 +518,12 @@ def fill_sc105(case, template_path, output_path):
         "SC-105[0].Page1[0].Sign[0].SigDate4[0]": svc.get("service_date", ""),
         "SC-105[0].Page1[0].Sign[0].SigName[0]":  svc.get("server_name", p["name"]),
 
-        # Page 2 caption + party names
-        "SC-105[0].Page2[0].RightCaption[0].CourtInfo[0]":          _court_info(case),
-        "SC-105[0].Page2[0].RightCaption[0].CaseNumber[0]":         case.get("case_number", ""),
-        "SC-105[0].Page2[0].RightCaption[0].CaseName[0]":           cn,
+        **_caption_fields(
+            case,
+            "SC-105[0].Page2[0].RightCaption[0].CourtInfo[0]",
+            "SC-105[0].Page2[0].RightCaption[0].CaseNumber[0]",
+            "SC-105[0].Page2[0].RightCaption[0].CaseName[0]",
+        ),
         "SC-105[0].Page2[0].List7[0].Item7[0].FullName10[0]":       p["name"],
         "SC-105[0].Page2[0].List7[0].Item7[0].FullName12[0]":       d.get("name", "City of Oakland"),
     }
@@ -529,10 +541,12 @@ def fill_sc109(case, template_path, output_path):
     cn = _case_name(case)
 
     values = {
-        # Caption
-        "SC-109[0].Page1[0].Right_Caption[0].County[0].CourtInfo[0]": _court_info(case),
-        "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseNumber[0]":    case.get("case_number", ""),
-        "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseName[0]":      cn,
+        **_caption_fields(
+            case,
+            "SC-109[0].Page1[0].Right_Caption[0].County[0].CourtInfo[0]",
+            "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseNumber[0]",
+            "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseName[0]",
+        ),
 
         # Section 1: declarant
         "SC-109[0].Page1[0].List1[0].li1[0].NameField[0]":    p["name"],
@@ -543,7 +557,6 @@ def fill_sc109(case, template_path, output_path):
         "SC-109[0].Page1[0].List2[0].li1[0].PltfCheck[0]": "/Yes",
         "SC-109[0].Page1[0].List2[0].li1[0].PltfName[0]":  p["name"],
 
-        # Page 2 header
         "SC-109[0].Page2[0].Header[0].CaseName[0]":   cn,
         "SC-109[0].Page2[0].Header[0].CaseNumber[0]": case.get("case_number", ""),
     }
@@ -643,10 +656,12 @@ def fill_sc150(case, template_path, output_path):
         return seq[i] if i < len(seq) else ""
 
     values = {
-        # Caption
-        "SC-150[0].Page1[0].Caption_sf[0].supcourt[0].CourtInfo[0]":        _court_info(case),
-        "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseNumber[0]": case.get("case_number", ""),
-        "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseName[0]":   cn,
+        **_caption_fields(
+            case,
+            "SC-150[0].Page1[0].Caption_sf[0].supcourt[0].CourtInfo[0]",
+            "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseNumber[0]",
+            "SC-150[0].Page1[0].Caption_sf[0].casenumbername[0].CaseName[0]",
+        ),
 
         # 1. My name is / mailing address / phone / plaintiff-or-defendant
         "SC-150[0].Page1[0].List1[0].item1[0].FillText01[0]": requester,
