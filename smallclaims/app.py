@@ -80,6 +80,15 @@ def _ai_cleanup_summary(text: str) -> str:
     return out
 
 
+def _cleanup_manual_claim_reason() -> None:
+    cleaned_summary = _ai_cleanup_summary(st.session_state.get("manual_claim_reason", ""))
+    if cleaned_summary:
+        st.session_state["manual_claim_reason"] = cleaned_summary
+        st.session_state["manual_claim_reason_notice"] = "cleaned"
+    else:
+        st.session_state["manual_claim_reason_notice"] = "empty"
+
+
 def _build_guided_declaration(text: str, answers: dict) -> str:
     intro = [
         "I am the plaintiff in this action.",
@@ -2052,13 +2061,14 @@ with tab_manual:
         height=120,
         key="manual_claim_reason",
     )
-    if st.button("✨ Clean Up Summary", key="manual_claim_reason_clean"):
-        cleaned_summary = _ai_cleanup_summary(st.session_state.get("manual_claim_reason", ""))
-        if cleaned_summary:
-            st.session_state["manual_claim_reason"] = cleaned_summary
-            st.rerun()
-        else:
-            st.info("Enter a brief summary first, then use Clean Up Summary.")
+    st.button(
+        "✨ Clean Up Summary",
+        key="manual_claim_reason_clean",
+        on_click=_cleanup_manual_claim_reason,
+    )
+    _notice = st.session_state.pop("manual_claim_reason_notice", None)
+    if _notice == "empty":
+        st.info("Enter a brief summary first, then use Clean Up Summary.")
 
     # ── List your damages (used on the claim form, declaration, SC-100) ─
     st.divider()
