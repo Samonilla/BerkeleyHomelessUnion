@@ -1897,18 +1897,13 @@ tab_manual, tab_sheet = st.tabs(["📝 Manual Entry", "📊 Spreadsheet Import"]
 
 with tab_manual:
     # ════════════════════════════════════════════════════
-    # STEP 1 — GOVERNMENT CLAIM (optional; file this first only when suing government)
+    # STEP 1 — ENTER YOUR INFORMATION
     # ════════════════════════════════════════════════════
-    st.header("Step 1 — Government Claim (optional)")
+    st.header("Step 1 — Enter Your Information")
     st.caption(
-        "This is a separate, optional path. Use it only if you are suing a "
-        "California city or other public entity, because those cases usually "
-        "require a government tort claim first (Gov. Code §§ 905, 910). "
-        "If you are not suing the government, skip this step and go straight "
-        "to Step 2. You can either upload your jurisdiction's own claim form "
-        "(PDF) to auto-fill it, or generate a generic claim form to file with "
-        "the City Clerk. The entity being claimed against comes from the "
-        "Defendant section in Step 2."
+        "Start by entering claimant information, incident details, and damages. "
+        "If your case is against a California city or public agency, Step 2 "
+        "lets you create the government claim demand before filing suit."
     )
 
     # ── Your name and information ──────────────────────────────────────
@@ -2011,7 +2006,7 @@ with tab_manual:
 
     # ── Claim data shared by the uploaded-PDF and generic paths ────────
     def _collect_claim_data() -> dict:
-        # Defendant widgets live in Step 2; the primary defendant's values
+        # Defendant widgets live in Step 3; the primary defendant's values
         # are published to session state each run.
         _gc_defs = st.session_state.get("manual_defendants_data") or [{}]
         _gc_def = _gc_defs[0]
@@ -2037,6 +2032,22 @@ with tab_manual:
             "amount":            claim_amount.strip(),
             "items":             _items_from_editor(),
         }
+
+    # ════════════════════════════════════════════════════
+    # STEP 2 — MAKE A DEMAND
+    # ════════════════════════════════════════════════════
+    st.divider()
+    st.header("Step 2 — Make a Demand")
+    st.caption(
+        "This is a separate, optional path. Use it only if you are suing a "
+        "California city or other public entity, because those cases usually "
+        "require a government tort claim first (Gov. Code §§ 905, 910). "
+        "If you are not suing the government, skip this step and go straight "
+        "to Step 3. You can either upload your jurisdiction's own claim form "
+        "(PDF) to auto-fill it, or generate a generic claim form to file with "
+        "the City Clerk. The entity being claimed against comes from the "
+        "Defendant section in Step 3."
+    )
 
     # ── Option A: your jurisdiction's own claim form (PDF upload) ──────
     st.divider()
@@ -2136,16 +2147,16 @@ with tab_manual:
         )
     st.caption(
         "Print, sign, and file the claim with the City Clerk (the agent for "
-        "service shown in the Step 2 defendant section). The city generally has "
+        "service shown in the Step 3 defendant section). The city generally has "
         "**45 days** to respond. Once the claim is rejected — or 45 days "
-        "pass — move to Step 2."
+        "pass — move to Step 3."
     )
 
     # ════════════════════════════════════════════════════
-    # STEP 2 — FILE THE SMALL CLAIMS LAWSUIT
+    # STEP 3 — FILL AND FILE LAWSUIT
     # ════════════════════════════════════════════════════
     st.divider()
-    st.header("Step 2 — File the Small Claims Lawsuit")
+    st.header("Step 3 — Fill and File Lawsuit")
     st.caption(
         "After the claim is rejected (or 45 days pass with no response), file in "
         "small claims court. Name the defendant(s), pick the court, set your "
@@ -2182,7 +2193,7 @@ with tab_manual:
                     st.session_state["manual_def_ids"].remove(def_id)
                     st.rerun()
         manual_defendants.append(_defendant_block("manual", def_id, is_primary))
-    # Step 1's government claim reads the primary defendant from here
+    # Step 2's demand section reads the primary defendant from here
     st.session_state["manual_defendants_data"] = manual_defendants
     st.divider()
 
@@ -2200,36 +2211,9 @@ with tab_manual:
     with fd2:
         govt_claim_date = st.text_input(
             "Govt Claim Filed with City Clerk *", placeholder="MM/DD/YYYY",
-            help="The date you filed (or will file) the Step 1 government claim.",
+            help="The date you filed (or will file) the Step 2 government claim.",
             key="manual_govt_claim_date",
         )
-
-    declaration_text_input = st.text_area(
-        "Write your declaration in your own words",
-        placeholder="Start typing what happened. For example: I was present when the City took my belongings, I was not given notice, and I saw them throw away my property.",
-        height=180,
-        key="manual_declaration_text",
-    )
-
-    if st.button("Generate declaration", use_container_width=True):
-        items = _items_from_editor()
-
-        declaration_text = _build_guided_declaration(
-            declaration_text_input,
-            {
-                "incident_date": incident_date.strip(),
-                "claim_amount": claim_amount.strip(),
-                "items": items,
-            },
-        )
-        st.session_state["declaration_text"] = declaration_text
-
-    declaration_text = st.session_state.get("declaration_text", "")
-    st.text_area(
-        "Declaration draft",
-        value=declaration_text or "Press the button above to generate a court-style declaration.",
-        height=260,
-    )
     damages_calc = st.text_area(
         "How Damages Are Calculated",
         placeholder=(
@@ -2271,13 +2255,9 @@ with tab_manual:
             "Generate Forms", type="primary", use_container_width=True
         )
 
-    st.download_button(
-        "⬇️ Download declaration as Word document",
-        data=_build_declaration_docx(declaration_text),
-        file_name="guided_declaration.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        disabled=not declaration_text.strip(),
-    )
+    declaration_text = st.session_state.get("declaration_text", "").strip()
+    if not declaration_text:
+        declaration_text = st.session_state.get("manual_declaration_text", "").strip()
 
     def _manual_case_from_inputs() -> dict:
         basis_code = fw_basis.split(" — ")[0].strip()
@@ -2397,10 +2377,10 @@ with tab_manual:
 
 
     # ════════════════════════════════════════════════════
-    # STEP 3 — PREPARE FOR TRIAL
+    # STEP 4 — PREPARE FOR TRIAL
     # ════════════════════════════════════════════════════
     st.divider()
-    st.header("Step 3 — Prepare for Trial")
+    st.header("Step 4 — Prepare For Trial")
     st.caption(
         "Once your case is filed, gather your evidence. Use the subpoena "
         "below to make the city or other agencies produce records — footage, "
@@ -2408,6 +2388,41 @@ with tab_manual:
         "help you present your case at trial, use the SC-109 section below "
         "the subpoena. If you can't make your trial date, use the SC-150 "
         "section to ask the court to postpone the trial."
+    )
+
+    st.divider()
+    st.subheader("Declaration")
+    declaration_text_input = st.text_area(
+        "Write your declaration in your own words",
+        placeholder="Start typing what happened. For example: I was present when the City took my belongings, I was not given notice, and I saw them throw away my property.",
+        height=180,
+        key="manual_declaration_text",
+    )
+
+    if st.button("Generate declaration", use_container_width=True, key="gen_declaration_step4"):
+        items = _items_from_editor()
+        st.session_state["declaration_text"] = _build_guided_declaration(
+            declaration_text_input,
+            {
+                "incident_date": incident_date.strip(),
+                "claim_amount": claim_amount.strip(),
+                "items": items,
+            },
+        )
+
+    declaration_text = st.session_state.get("declaration_text", "").strip() or declaration_text_input.strip()
+    st.text_area(
+        "Declaration draft",
+        value=declaration_text or "Press the button above to generate a court-style declaration.",
+        height=260,
+    )
+
+    st.download_button(
+        "⬇️ Download declaration as Word document",
+        data=_build_declaration_docx(declaration_text),
+        file_name="guided_declaration.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        disabled=not declaration_text.strip(),
     )
 
     # ── Subpoena (SC-107) — checkboxes only + typed attachments ─────────
