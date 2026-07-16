@@ -1001,6 +1001,7 @@ def _resume_case_defaults(case: dict) -> dict:
         "manual_involved_employees": claim.get("employees", ""),
         "manual_claim_reason": claim.get("reason", ""),
         "manual_items_editor_data": pd.DataFrame(item_rows),
+        "manual_items_editor_base": pd.DataFrame(item_rows),
         "manual_filing_date": filing.get("filing_date", ""),
         "manual_govt_claim_date": claim.get("govt_claim_filed_date", ""),
         "manual_declaration_text": declaration.get("content", claim.get("reason", "")),
@@ -2025,12 +2026,17 @@ with tab_manual:
         "Itemize damaged or lost property and include intangible damages. "
         "Leave Value ($) blank for intangible damages if needed."
     )
-    _raw_items_value = st.session_state.get("manual_items_editor_data")
+    _raw_items_value = st.session_state.get("manual_items_editor_base")
+    if _raw_items_value is None:
+        _raw_items_value = st.session_state.get("manual_items_editor_data")
     if _raw_items_value is None:
         _raw_items_value = st.session_state.get("manual_items_editor")
     _initial_items_df = _normalize_items_editor_df(_raw_items_value)
+    if "manual_items_editor_base" not in st.session_state:
+        st.session_state["manual_items_editor_base"] = _initial_items_df.copy()
+
     items_df = st.data_editor(
-        _initial_items_df,
+        st.session_state["manual_items_editor_base"],
         num_rows="dynamic",
         use_container_width=True,
         column_config={
