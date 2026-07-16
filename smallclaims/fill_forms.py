@@ -168,6 +168,16 @@ def validate_case(case):
     """Raise ValueError with clear message if required fields are missing."""
     errors = []
 
+    def _is_public_entity(defendant: dict) -> bool:
+        name = str((defendant or {}).get("name") or "").strip().lower()
+        if not name:
+            return False
+        public_tokens = (
+            "city", "county", "department", "agency", "district",
+            "state", "public", "authority", "board", "university",
+        )
+        return any(tok in name for tok in public_tokens)
+
     p = case.get("plaintiff", {})
     if not p.get("name"):
         errors.append("plaintiff.name is required")
@@ -184,14 +194,11 @@ def validate_case(case):
         errors.append("claim.reason is required")
     if not claim.get("incident_date"):
         errors.append("claim.incident_date is required (format: MM/DD/YYYY)")
-    if not claim.get("govt_claim_filed_date"):
+    defendant = case.get("defendant") or {}
+    if _is_public_entity(defendant) and not claim.get("govt_claim_filed_date"):
         errors.append(
             "claim.govt_claim_filed_date is required when suing a public entity"
         )
-
-    filing = case.get("filing", {})
-    if not filing.get("filing_date"):
-        errors.append("filing.filing_date is required")
 
     if errors:
         raise ValueError(
