@@ -1054,16 +1054,16 @@ def _resume_case_defaults(case: dict) -> dict:
         defaults[f"{prefix}_custom_city"] = defendant.get("city", "")
         defaults[f"{prefix}_custom_state"] = defendant.get("state", "CA") or "CA"
         defaults[f"{prefix}_custom_zip"] = defendant.get("zip", "")
-        if idx == 0:
-            defaults[f"{prefix}_custom_agent_name"] = defendant.get("agent_name", "")
-            defaults[f"{prefix}_custom_agent_title"] = defendant.get("agent_title", "")
-            defaults[f"{prefix}_custom_agent_street"] = defendant.get("agent_address", "")
-            defaults[f"{prefix}_custom_agent_city"] = defendant.get("agent_city", "")
-            defaults[f"{prefix}_custom_agent_zip"] = defendant.get("agent_zip", "")
-        else:
-            defaults[f"{prefix}_custom_phone"] = defendant.get("phone", "")
-            defaults[f"{prefix}_custom_mailing"] = defendant.get("mailing", "")
-            defaults[f"{prefix}_custom_job_title"] = defendant.get("job_title", "")
+        defaults[f"{prefix}_custom_is_corporation"] = bool(
+            defendant.get("is_corporation")
+            or defendant.get("agent_name")
+            or defendant.get("agent_address")
+        )
+        defaults[f"{prefix}_custom_agent_name"] = defendant.get("agent_name", "")
+        defaults[f"{prefix}_custom_agent_title"] = defendant.get("agent_title", "")
+        defaults[f"{prefix}_custom_agent_street"] = defendant.get("agent_address", "")
+        defaults[f"{prefix}_custom_agent_city"] = defendant.get("agent_city", "")
+        defaults[f"{prefix}_custom_agent_zip"] = defendant.get("agent_zip", "")
 
     return defaults
 
@@ -1857,9 +1857,6 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
     person, business, county agency, or city. An optional dropdown prefills
     the fields from the California municipality database, but nothing is
     ever locked to a city.
-
-    The primary defendant (SC-100) also gets agent-for-service fields;
-    additional defendants (SC-100A) get phone / mailing / job-title fields.
     """
     city_options = [_CUSTOM_DEFENDANT] + ALL_CITIES
     selected = st.selectbox(
@@ -1898,7 +1895,7 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
         with s2:
             zip_v = st.text_input("ZIP", value=d["zip"], key=f"{kp}_zip")
 
-    out = {
+    out: dict[str, str | bool] = {
         "name":    name_v.strip(),
         "address": street_v.strip(),
         "street":  street_v.strip(),
@@ -1908,7 +1905,14 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
     }
 
     with c2:
-        if is_primary:
+        is_corporation = st.checkbox(
+            "Is this Defendant a Corporation?",
+            key=f"{kp}_is_corporation",
+            help="If checked, provide the Agent for Service for this defendant.",
+        )
+        out["is_corporation"] = bool(is_corporation)
+
+        if is_corporation:
             out["agent_name"]    = st.text_input(
                 "Agent for Service (Name)", value=d["agent_name"], key=f"{kp}_agent_name",
                 help="Who accepts legal papers for the defendant. For a city this is "
@@ -1919,10 +1923,6 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
             out["agent_city"]    = st.text_input("Agent City", value=d["agent_city"], key=f"{kp}_agent_city").strip()
             out["agent_state"]   = "CA"
             out["agent_zip"]     = st.text_input("Agent ZIP", value=d["agent_zip"], key=f"{kp}_agent_zip").strip()
-        else:
-            out["phone"]     = st.text_input("Phone", key=f"{kp}_phone").strip()
-            out["mailing"]   = st.text_input("Mailing Address (if different)", key=f"{kp}_mailing").strip()
-            out["job_title"] = st.text_input("Job Title (if known)", key=f"{kp}_job_title").strip()
 
     if out["name"]:
         st.caption(f"**{out['name']}** · {out['address']}, {out['city']}, {out['state']} {out['zip']}")
@@ -2226,14 +2226,7 @@ with tab_manual:
         st.session_state["manual_def_ids"] = [0]
         st.session_state["manual_def_next"] = 1
 
-    hdr_l, hdr_r = st.columns([0.92, 0.08])
-    with hdr_l:
-        st.subheader("Defendant")
-    with hdr_r:
-        if st.button("➕", key="manual_add_def", help="Add another defendant (listed on form SC-100A)"):
-            st.session_state["manual_def_ids"].append(st.session_state["manual_def_next"])
-            st.session_state["manual_def_next"] += 1
-            st.rerun()
+    st.subheader("Defendant")
 
     manual_defendants = []
     for pos, def_id in enumerate(st.session_state["manual_def_ids"]):
@@ -2244,12 +2237,18 @@ with tab_manual:
         else:
             rc1, rc2 = st.columns([0.92, 0.08])
             with rc1:
-                st.markdown(f"**Defendant {pos + 1}** · on attached SC-100A")
+                st.markdown(f"**Defendant {pos + 1}** · will be added on attached SC-100A")
             with rc2:
                 if st.button("✕", key=f"manual_rm_def{def_id}", help="Remove this defendant"):
                     st.session_state["manual_def_ids"].remove(def_id)
                     st.rerun()
         manual_defendants.append(_defendant_block("manual", def_id, is_primary))
+
+    if st.button("Add Defendant", key="manual_add_def", use_container_width=True):
+        st.session_state["manual_def_ids"].append(st.session_state["manual_def_next"])
+        st.session_state["manual_def_next"] += 1
+        st.rerun()
+    st.caption("The first defendant is filed on SC-100. Additional defendants are filed on SC-100A.")
     # Step 2's demand section reads the primary defendant from here
     st.session_state["manual_defendants_data"] = manual_defendants
     st.divider()
