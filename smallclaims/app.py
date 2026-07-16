@@ -1013,21 +1013,43 @@ def _apply_resume_case(case: dict) -> None:
 def _resume_case_label(case: dict) -> str:
     plaintiff = case.get("plaintiff") or {}
     internal = case.get("internal_case_number") or "—"
-    return f"{plaintiff.get('name', 'Unnamed claimant')} · {internal}"
+    case_number = case.get("case_number") or "no court case # yet"
+    incident = (case.get("claim") or {}).get("incident_date") or "no incident date"
+    return f"{plaintiff.get('name', 'Unnamed claimant')} · {internal} · {case_number} · {incident}"
+
+
+def _case_search_blob(case: dict) -> str:
+    claim = case.get("claim") or {}
+    filing = case.get("filing") or {}
+    plaintiff = case.get("plaintiff") or {}
+    parts = [
+        case.get("internal_case_number") or "",
+        case.get("case_number") or "",
+        plaintiff.get("name") or "",
+        claim.get("incident_date") or "",
+        filing.get("filing_date") or "",
+        case.get("captured_at") or "",
+    ]
+    return " ".join(str(part).strip().lower() for part in parts if str(part).strip())
+
+
+def _case_matches_query(case: dict, query: str) -> bool:
+    text = str(query or "").strip()
+    if not text:
+        return True
+    haystack = _case_search_blob(case)
+    if text.lower() in haystack:
+        return True
+    token = _slug(text)
+    return bool(token and token in _slug(haystack))
 
 
 def _find_resume_case(identifier: str) -> dict | None:
-    token = _slug(identifier)
+    token = str(identifier or "").strip()
     if not token:
         return None
     for case in _load_case_records():
-        plaintiff = (case.get("plaintiff") or {}).get("name") or ""
-        candidates = {
-            _slug(str(case.get("internal_case_number") or "")),
-            _slug(plaintiff),
-            _slug(str(case.get("case_number") or "")),
-        }
-        if token in candidates:
+        if _case_matches_query(case, token):
             return case
     return None
 
@@ -1246,9 +1268,18 @@ def _render_admin_portal(user: str) -> None:
         if not records:
             st.info("No claimant records have been captured yet.")
         else:
+            resume_filter = st.text_input(
+                "Filter by name, case number, or date",
+                key="portal_resume_filter",
+                help="Search by claimant name, internal case number, court case number, incident date, or filing date.",
+            )
+            filtered_records = [case for case in records if _case_matches_query(case, resume_filter)]
+            if not filtered_records:
+                st.warning("No claimant matched that search.")
+                filtered_records = records
             chosen = st.selectbox(
                 "Search claimant names",
-                records,
+                filtered_records,
                 format_func=_resume_case_label,
                 key="portal_resume_case_choice",
                 help="Use this to jump back into a captured intake record.",
