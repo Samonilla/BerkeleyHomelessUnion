@@ -172,6 +172,36 @@ def _caption_fields(case, court_key=None, case_number_key=None, case_name_key=No
     return values
 
 
+def _plaintiff_contact(case: dict) -> dict:
+    """Normalize plaintiff contact fields used across form headers."""
+    p = case.get("plaintiff", {}) or {}
+    state = p.get("state", "CA")
+    zip_code = p.get("zip", "")
+    mailing_address = ", ".join(
+        part for part in [
+            p.get("street", ""),
+            p.get("city", ""),
+            f"{state} {zip_code}".strip(),
+        ] if part
+    )
+    return {
+        "name": p.get("name", ""),
+        "street": p.get("street", ""),
+        "city": p.get("city", ""),
+        "state": state,
+        "zip": zip_code,
+        "phone": p.get("phone", ""),
+        "email": p.get("email", ""),
+        "mailing_address": mailing_address,
+    }
+
+
+def _plaintiff_fields(case: dict, field_map: dict[str, str]) -> dict:
+    """Map standardized plaintiff contact keys onto concrete PDF field ids."""
+    contact = _plaintiff_contact(case)
+    return {pdf_field: contact.get(contact_key, "") for pdf_field, contact_key in field_map.items()}
+
+
 # ─────────────────────────────────────────────────────────────
 # VALIDATION
 # ─────────────────────────────────────────────────────────────
@@ -307,7 +337,7 @@ def _case_name(case):
 
 def fill_sc100(case, template_path, output_path, field_meta_path):
     meta = load_field_meta(field_meta_path)
-    p = case["plaintiff"]
+    contact = _plaintiff_contact(case)
     d = case.get("defendant", DEFENDANT_DEFAULTS["city_of_oakland"])
     claim = case["claim"]
     filing = case.get("filing", {})
@@ -318,13 +348,15 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
         "SC-100[0].Page1[0].CaptionRight[0].County[0].CourtInfo[0]": _court_info(case),
 
         # Plaintiff
-        "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffName1[0]":    p["name"],
-        "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffAddress1[0]": p.get("street", ""),
-        "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffCity1[0]":    p.get("city", ""),
-        "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffState1[0]":   p.get("state", "CA"),
-        "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffZip1[0]":     p.get("zip", ""),
-        "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffPhone1[0]":   p.get("phone", ""),
-        "SC-100[0].Page2[0].List1[0].Item1[0].EmailAdd1[0]":         p.get("email", ""),
+        **_plaintiff_fields(case, {
+            "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffName1[0]": "name",
+            "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffAddress1[0]": "street",
+            "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffCity1[0]": "city",
+            "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffState1[0]": "state",
+            "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffZip1[0]": "zip",
+            "SC-100[0].Page2[0].List1[0].Item1[0].PlaintiffPhone1[0]": "phone",
+            "SC-100[0].Page2[0].List1[0].Item1[0].EmailAdd1[0]": "email",
+        }),
 
         # Defendant
         "SC-100[0].Page2[0].List2[0].item2[0].DefendantName1[0]":    d.get("name", "City of Oakland"),
@@ -401,11 +433,11 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
 
         # Signature
         "SC-100[0].Page4[0].Sign[0].Date1[0]":          generated_date,
-        "SC-100[0].Page4[0].Sign[0].PlaintiffName1[0]":  p["name"],
+        "SC-100[0].Page4[0].Sign[0].PlaintiffName1[0]":  contact["name"],
 
         # Repeated caption fields
         **{
-            f"SC-100[0].Page{page}[0].PxCaption[0].Plaintiff[0]": p["name"]
+            f"SC-100[0].Page{page}[0].PxCaption[0].Plaintiff[0]": contact["name"]
             for page in (2, 3, 4)
         },
     }
@@ -424,7 +456,7 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
 
 def fill_fw001(case, template_path, output_path, field_meta_path):
     meta = load_field_meta(field_meta_path)
-    p = case["plaintiff"]
+    contact = _plaintiff_contact(case)
     fw = case.get("fee_waiver", {})
     generated_date = _forms_generated_date(case)
 
@@ -438,12 +470,14 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
         ),
 
         # Section 1: Petitioner info
-        "FW-001[0].Page1[0].List1[0].item1[0].PetitionerName1[0]":      p["name"],
-        "FW-001[0].Page1[0].List1[0].item1[0].PetitionerStrAddress[0]": p.get("street", ""),
-        "FW-001[0].Page1[0].List1[0].item1[0].PetitionerCity[0]":       p.get("city", ""),
-        "FW-001[0].Page1[0].List1[0].item1[0].PetitionerState[0]":      p.get("state", "CA"),
-        "FW-001[0].Page1[0].List1[0].item1[0].PetitionerZip[0]":        p.get("zip", ""),
-        "FW-001[0].Page1[0].List1[0].item1[0].PetitionerTel[0]":        p.get("phone", ""),
+        **_plaintiff_fields(case, {
+            "FW-001[0].Page1[0].List1[0].item1[0].PetitionerName1[0]": "name",
+            "FW-001[0].Page1[0].List1[0].item1[0].PetitionerStrAddress[0]": "street",
+            "FW-001[0].Page1[0].List1[0].item1[0].PetitionerCity[0]": "city",
+            "FW-001[0].Page1[0].List1[0].item1[0].PetitionerState[0]": "state",
+            "FW-001[0].Page1[0].List1[0].item1[0].PetitionerZip[0]": "zip",
+            "FW-001[0].Page1[0].List1[0].item1[0].PetitionerTel[0]": "phone",
+        }),
 
         # Section 4: Superior Court fees
         "FW-001[0].Page1[0].List4[0].item4[0].WaiveSuperiorCrtFee[0]": _checkbox_value(meta,
@@ -483,10 +517,10 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
 
         # Signature
         "FW-001[0].Page1[0].Sign[0].SigDate[0]":        generated_date,
-        "FW-001[0].Page1[0].Sign[0].PetitionerName[0]": p["name"],
+        "FW-001[0].Page1[0].Sign[0].PetitionerName[0]": contact["name"],
 
         # Page 2 caption + income
-        "FW-001[0].Page2[0].pXCaption[0].PetitionerName1[0]":           p["name"],
+        "FW-001[0].Page2[0].pXCaption[0].PetitionerName1[0]":           contact["name"],
         "FW-001[0].Page2[0].List8[0].Lia[0].IncomeSource1[0]":          fw.get("income_source_1", ""),
         "FW-001[0].Page2[0].List8[0].Lia[0].IncomeAmount1[0]":          str(fw.get("income_amount_1", "")),
         "FW-001[0].Page2[0].List8[0].Lib[0].TotalIncome[0]":            str(fw.get("total_monthly_income", "")),
@@ -533,10 +567,9 @@ def fill_fw003(case, template_path, output_path):
 # ─────────────────────────────────────────────────────────────
 
 def fill_sc105(case, template_path, output_path):
-    p = case["plaintiff"]
+    contact = _plaintiff_contact(case)
     d = case.get("defendant", DEFENDANT_DEFAULTS["city_of_oakland"])
     svc = case.get("service", {})
-    cn = _case_name(case)
     generated_date = _forms_generated_date(case)
 
     values = {
@@ -548,12 +581,12 @@ def fill_sc105(case, template_path, output_path):
         ),
 
         # Party names
-        "SC-105[0].Page1[0].List1[0].Item[0].FullName3[0]": p["name"],
+        "SC-105[0].Page1[0].List1[0].Item[0].FullName3[0]": contact["name"],
         "SC-105[0].Page1[0].List1[0].Item[0].FullName2[0]": d.get("name", "City of Oakland"),
 
         # Signature
         "SC-105[0].Page1[0].Sign[0].SigDate4[0]": generated_date,
-        "SC-105[0].Page1[0].Sign[0].SigName[0]":  svc.get("server_name", p["name"]),
+        "SC-105[0].Page1[0].Sign[0].SigName[0]":  svc.get("server_name", contact["name"]),
 
         **_caption_fields(
             case,
@@ -561,7 +594,7 @@ def fill_sc105(case, template_path, output_path):
             "SC-105[0].Page2[0].RightCaption[0].CaseNumber[0]",
             "SC-105[0].Page2[0].RightCaption[0].CaseName[0]",
         ),
-        "SC-105[0].Page2[0].List7[0].Item7[0].FullName10[0]":       p["name"],
+        "SC-105[0].Page2[0].List7[0].Item7[0].FullName10[0]":       contact["name"],
         "SC-105[0].Page2[0].List7[0].Item7[0].FullName12[0]":       d.get("name", "City of Oakland"),
     }
 
@@ -574,8 +607,7 @@ def fill_sc105(case, template_path, output_path):
 # ─────────────────────────────────────────────────────────────
 
 def fill_sc109_exemption(case, template_path, output_path):
-    p = case["plaintiff"]
-    cn = _case_name(case)
+    contact = _plaintiff_contact(case)
 
     values = {
         **_caption_fields(
@@ -586,13 +618,13 @@ def fill_sc109_exemption(case, template_path, output_path):
         ),
 
         # Section 1: declarant
-        "SC-109[0].Page1[0].List1[0].li1[0].NameField[0]":    p["name"],
-        "SC-109[0].Page1[0].List1[0].li1[0].Address[0]":      p.get("street", ""),
+        "SC-109[0].Page1[0].List1[0].li1[0].NameField[0]":    contact["name"],
+        "SC-109[0].Page1[0].List1[0].li1[0].Address[0]":      contact["street"],
         "SC-109[0].Page1[0].List1[0].li1[0].RelateField[0]":  "Plaintiff",
 
         # Section 2: check plaintiff
         "SC-109[0].Page1[0].List2[0].li1[0].PltfCheck[0]": "/Yes",
-        "SC-109[0].Page1[0].List2[0].li1[0].PltfName[0]":  p["name"],
+        "SC-109[0].Page1[0].List2[0].li1[0].PltfName[0]":  contact["name"],
 
         **_caption_fields(
             case,
@@ -657,10 +689,10 @@ def fill_sc150(case, template_path, output_path):
 
     Expected keys in case["postponement"] (all optional except reason /
     requested_date, which make the request meaningful):
-        requester_name      defaults to plaintiff name
+        requester_name      ignored; plaintiff name is always used at top
         role                "plaintiff" | "defendant" (default "plaintiff")
-        mailing_address     defaults to plaintiff street/city/state/zip
-        phone               defaults to plaintiff phone
+        mailing_address     ignored; plaintiff address is always used at top
+        phone               ignored; plaintiff phone is always used at top
         current_trial_date  item 2 — date trial is now scheduled (MM/DD/YYYY)
         requested_date      item 3 — approximate new date requested
         reason              item 4 — why the postponement is needed
@@ -672,18 +704,14 @@ def fill_sc150(case, template_path, output_path):
         unknown_names       list of up to 2 names (6d)
         request_date        signature date, defaults to forms generated date
     """
-    p = case["plaintiff"]
+    contact = _plaintiff_contact(case)
     post = case.get("postponement", {}) or {}
     generated_date = _forms_generated_date(case)
     cn = _case_name(case)
 
-    requester = post.get("requester_name") or p["name"]
+    requester = contact["name"]
     role = (post.get("role") or "plaintiff").strip().lower()
-    mailing = post.get("mailing_address") or ", ".join(x for x in [
-        p.get("street", ""),
-        p.get("city", ""),
-        f"{p.get('state', 'CA')} {p.get('zip', '')}".strip(),
-    ] if x)
+    mailing = contact["mailing_address"]
 
     served   = [s for s in (post.get("served") or []) if s.get("name")][:2]
     unserved = [n for n in (post.get("unserved_names") or []) if n][:2]
@@ -707,7 +735,7 @@ def fill_sc150(case, template_path, output_path):
         # 1. My name is / mailing address / phone / plaintiff-or-defendant
         "SC-150[0].Page1[0].List1[0].item1[0].FillText01[0]": requester,
         "SC-150[0].Page1[0].List1[0].item1[0].FillText03[0]": mailing,
-        "SC-150[0].Page1[0].List1[0].item1[0].FillText04[0]": post.get("phone", p.get("phone", "")),
+        "SC-150[0].Page1[0].List1[0].item1[0].FillText04[0]": contact["phone"],
         "SC-150[0].Page1[0].List1[0].item1[0].CheckBox01[0]": "/1" if role == "plaintiff" else "/Off",
         "SC-150[0].Page1[0].List1[0].item1[0].CheckBox01[1]": "/2" if role == "defendant" else "/Off",
 
