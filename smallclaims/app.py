@@ -2407,6 +2407,27 @@ with tab_manual:
         height=80,
     )
 
+    st.subheader("SC-100 Section 5 (Why this lawsuit is filed)")
+    sc100_section5_reason = st.radio(
+        "Choose the reason for filing",
+        [
+            "a — Defendant lives or does business where filed",
+            "b — Plaintiff's property was damaged where filed",
+            "c — Plaintiff was injured where filed",
+            "d — Contract was made/performed/broken where filed",
+            "e — Other",
+        ],
+        key="manual_sc100_section5_reason",
+        horizontal=False,
+    )
+    sc100_section5_other = ""
+    if sc100_section5_reason.startswith("e"):
+        sc100_section5_other = st.text_input(
+            "Section 5(e) details",
+            key="manual_sc100_section5_other",
+            placeholder="Enter the other reason shown on section 5(e).",
+        )
+
     # ── Fee Waiver ─────────────────────────────────────────────────────
     st.divider()
     st.subheader("Fee Waiver")
@@ -2503,6 +2524,8 @@ with tab_manual:
                 "incident_date":         incident_date.strip(),
                 "damages_calculation":   damages_calc.strip() or _summary_for_forms.strip(),
                 "govt_claim_filed_date": govt_claim_date.strip(),
+                "sc100_section5_reason": sc100_section5_reason.split(" — ")[0].strip().lower(),
+                "sc100_section5_other":  sc100_section5_other.strip(),
                 "items":                 _items_from_editor(),
             },
             "filing": {

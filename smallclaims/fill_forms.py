@@ -112,6 +112,9 @@ def _court_info(case: dict) -> str:
 
 
 def _venue_zip(case: dict) -> str:
+    defendant = case.get("defendant") or {}
+    if str(defendant.get("zip") or "").strip():
+        return str(defendant.get("zip")).strip()
     return case.get("court", _DEFAULT_COURT).get("zip", _DEFAULT_COURT["zip"])
 
 
@@ -331,6 +334,31 @@ def _case_name(case):
     return f"{case['plaintiff']['name']} v. {d.get('name', 'City of Oakland')}"
 
 
+def _sc100_section5_fields(case: dict, meta: dict) -> dict:
+    """Build SC-100 page 3 section 5 fields (a-e), defaulting to option a."""
+    claim = case.get("claim") or {}
+    selected = str(claim.get("sc100_section5_reason") or "a").strip().lower()
+    if selected not in {"a", "b", "c", "d", "e"}:
+        selected = "a"
+
+    option_to_field = {
+        "a": "SC-100[0].Page3[0].List5[0].Lia[0].Checkbox5cb[0]",
+        "b": "SC-100[0].Page3[0].List5[0].Lib[0].Checkbox5cb[0]",
+        "c": "SC-100[0].Page3[0].List5[0].Lic[0].Checkbox5cb[0]",
+        "d": "SC-100[0].Page3[0].List5[0].Lid[0].Checkbox5cb[0]",
+        "e": "SC-100[0].Page3[0].List5[0].Lie[0].Checkbox5cb[0]",
+    }
+
+    values = {
+        field_id: _checkbox_value(meta, field_id, option == selected)
+        for option, field_id in option_to_field.items()
+    }
+    values["SC-100[0].Page3[0].List5[0].Lie[0].FillField55[0]"] = str(
+        claim.get("sc100_section5_other") or ""
+    ).strip()
+    return values
+
+
 # ─────────────────────────────────────────────────────────────
 # SC-100  Plaintiff's Claim and ORDER to Go to Small Claims Court
 # ─────────────────────────────────────────────────────────────
@@ -392,10 +420,10 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
             not filing.get("demanded_payment", True),
         ),
 
-        # Venue — where property was damaged
-        "SC-100[0].Page3[0].List5[0].Lib[0].Checkbox5cb[0]": _checkbox_value(meta,
-            "SC-100[0].Page3[0].List5[0].Lib[0].Checkbox5cb[0]", True
-        ),
+        # Section 5 — why this lawsuit is being filed
+        **_sc100_section5_fields(case, meta),
+
+        # Section 6 zip — default to first defendant zip
         "SC-100[0].Page3[0].List6[0].item6[0].ZipCode1[0]": _venue_zip(case),
 
         # Attorney-client fee dispute? No
