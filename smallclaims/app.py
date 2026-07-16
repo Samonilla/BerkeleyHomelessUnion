@@ -49,6 +49,7 @@ _TPL = HERE / "templates"
 _ADMIN_COOKIE_NAME = "bhu_admin_session"
 _ADMIN_COOKIE_DAYS = 30
 _CLAIMANT_COOKIE_NAME = "bhu_claimant_case"
+_SUMMARY_WORD_LIMIT = 200
 _cookie_manager = CookieManager(key="bhu_admin_cookie")
 
 
@@ -63,12 +64,14 @@ def _normalize_plain_language(text: str) -> str:
 
 
 def _ai_cleanup_summary(text: str) -> str:
-    """Lightweight, local AI-style cleanup for claimant summary text."""
+    """Local copy-edit pass: grammar, spacing, capitalization, punctuation."""
     raw = re.sub(r"\s+", " ", str(text or "")).strip()
     if not raw:
         return ""
 
-    # Preserve sentence-level facts but normalize capitalization/punctuation.
+    # Normalize punctuation spacing and sentence casing without changing facts.
+    raw = re.sub(r"\s+([,.;:!?])", r"\1", raw)
+    raw = re.sub(r"([,.;:!?])(\S)", r"\1 \2", raw)
     parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", raw) if p.strip()]
     if not parts:
         parts = [raw]
@@ -80,10 +83,22 @@ def _ai_cleanup_summary(text: str) -> str:
     return out
 
 
+def _split_summary_attachment(text: str, limit: int = _SUMMARY_WORD_LIMIT) -> tuple[str, str]:
+    words = re.findall(r"\S+", str(text or ""))
+    if len(words) <= limit:
+        return str(text or "").strip(), ""
+    summary = " ".join(words[:limit]).strip()
+    attachment = " ".join(words[limit:]).strip()
+    return summary, attachment
+
+
 def _cleanup_manual_claim_reason() -> None:
     cleaned_summary = _ai_cleanup_summary(st.session_state.get("manual_claim_reason", ""))
     if cleaned_summary:
-        st.session_state["manual_claim_reason"] = cleaned_summary
+        summary, attachment = _split_summary_attachment(cleaned_summary)
+        st.session_state["manual_claim_reason"] = summary
+        if attachment and not str(st.session_state.get("manual_claim_attachment", "")).strip():
+            st.session_state["manual_claim_attachment"] = attachment
         st.session_state["manual_claim_reason_notice"] = "cleaned"
     else:
         st.session_state["manual_claim_reason_notice"] = "empty"
@@ -2053,7 +2068,7 @@ with tab_manual:
         )
 
     claim_reason = st.text_area(
-        "Brief summary of what happened (used on the claim form and SC-100)",
+        "Summary of what happened (first 200 words go on the main form)",
         placeholder=(
             "On [date], the City of Oakland DPW conducted an encampment sweep "
             "at [location] and destroyed Plaintiff's personal property…"
@@ -2069,6 +2084,20 @@ with tab_manual:
     _notice = st.session_state.pop("manual_claim_reason_notice", None)
     if _notice == "empty":
         st.info("Enter a brief summary first, then use Clean Up Summary.")
+
+    _summary_for_forms, _summary_overflow = _split_summary_attachment(claim_reason)
+    _word_count = len(re.findall(r"\S+", claim_reason or ""))
+    st.caption(f"Summary word count: {_word_count} (first {_SUMMARY_WORD_LIMIT} words used on main form)")
+    if _summary_overflow:
+        st.warning("Summary is over 200 words. The overflow is stored in a separate attachment field below.")
+        if not str(st.session_state.get("manual_claim_attachment", "")).strip():
+            st.session_state["manual_claim_attachment"] = _summary_overflow
+    claim_attachment = st.text_area(
+        "Summary Attachment (used when summary exceeds 200 words)",
+        key="manual_claim_attachment",
+        height=140,
+        placeholder="Extra detail beyond the first 200 words goes here.",
+    )
 
     # ── List your damages (used on the claim form, declaration, SC-100) ─
     st.divider()
@@ -2139,7 +2168,10 @@ with tab_manual:
             "claimant_email":    email.strip(),
             "incident_date":     incident_date.strip(),
             "incident_location": incident_location.strip(),
-            "description":       claim_reason.strip(),
+            "description":       (
+                _summary_for_forms.strip()
+                + (" See attached summary." if str(claim_attachment).strip() else "")
+            ).strip(),
             "employees":         involved_employees.strip(),
             "amount":            claim_amount.strip(),
             "items":             _items_from_editor(),
@@ -2397,9 +2429,10 @@ with tab_manual:
             "defendant": _primary_defendant,
             "claim": {
                 "amount":                claim_amount.strip(),
-                "reason":                claim_reason.strip(),
+                "reason":                _summary_for_forms.strip(),
+                "reason_attachment":     str(claim_attachment or "").strip(),
                 "incident_date":         incident_date.strip(),
-                "damages_calculation":   damages_calc.strip() or claim_reason.strip(),
+                "damages_calculation":   damages_calc.strip() or _summary_for_forms.strip(),
                 "govt_claim_filed_date": govt_claim_date.strip(),
                 "items":                 _items_from_editor(),
             },
@@ -2425,7 +2458,9 @@ with tab_manual:
             },
             "declaration": {
                 "declarant_name": name.strip(),
-                "content":        declaration_text.strip() or claim_reason.strip(),
+                "content":        declaration_text.strip() or " ".join(
+                    p for p in [_summary_for_forms.strip(), str(claim_attachment or "").strip()] if p
+                ),
             },
             "subpoena": {
                 "case_caption":     f"{name.strip()} v. {_primary_defendant.get('name') or 'City of Oakland'}",
