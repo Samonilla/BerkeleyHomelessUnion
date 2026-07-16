@@ -148,11 +148,13 @@ def _checkbox_value(meta, field_id, checked):
     return meta.get(field_id, {}).get("unchecked_value", "/Off")
 
 
-def _caption_fields(case, court_key, case_number_key, case_name_key=None):
+def _caption_fields(case, court_key=None, case_number_key=None, case_name_key=None):
     values = {
-        court_key: _court_info(case),
-        case_number_key: case.get("case_number", ""),
     }
+    if court_key:
+        values[court_key] = _court_info(case)
+    if case_number_key:
+        values[case_number_key] = case.get("case_number", "")
     if case_name_key:
         values[case_name_key] = _case_name(case)
     return values
@@ -369,9 +371,10 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
         "SC-100[0].Page4[0].Sign[0].PlaintiffName1[0]":  p["name"],
 
         # Repeated caption fields
-        "SC-100[0].Page2[0].PxCaption[0].Plaintiff[0]": p["name"],
-        "SC-100[0].Page3[0].PxCaption[0].Plaintiff[0]": p["name"],
-        "SC-100[0].Page4[0].PxCaption[0].Plaintiff[0]": p["name"],
+        **{
+            f"SC-100[0].Page{page}[0].PxCaption[0].Plaintiff[0]": p["name"]
+            for page in (2, 3, 4)
+        },
     }
 
     _write_pdf(template_path, output_path, values)
@@ -557,8 +560,12 @@ def fill_sc109(case, template_path, output_path):
         "SC-109[0].Page1[0].List2[0].li1[0].PltfCheck[0]": "/Yes",
         "SC-109[0].Page1[0].List2[0].li1[0].PltfName[0]":  p["name"],
 
-        "SC-109[0].Page2[0].Header[0].CaseName[0]":   cn,
-        "SC-109[0].Page2[0].Header[0].CaseNumber[0]": case.get("case_number", ""),
+        **_caption_fields(
+            case,
+            None,
+            "SC-109[0].Page2[0].Header[0].CaseNumber[0]",
+            "SC-109[0].Page2[0].Header[0].CaseName[0]",
+        ),
     }
 
     _write_pdf(template_path, output_path, values)
@@ -857,12 +864,18 @@ def fill_sc109(case, template_path, output_path):
     helper = case.get("assistant", {}) or {}
 
     values = {
-        # Caption (both pages)
-        "SC-109[0].Page1[0].Right_Caption[0].County[0].CourtInfo[0]": _court_info(case),
-        "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseNumber[0]": case.get("case_number", ""),
-        "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseName[0]": _case_name(case),
-        "SC-109[0].Page2[0].Header[0].CaseName[0]": _case_name(case),
-        "SC-109[0].Page2[0].Header[0].CaseNumber[0]": case.get("case_number", ""),
+        **_caption_fields(
+            case,
+            "SC-109[0].Page1[0].Right_Caption[0].County[0].CourtInfo[0]",
+            "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseNumber[0]",
+            "SC-109[0].Page1[0].Right_Caption[0].CN[0].CaseName[0]",
+        ),
+        **_caption_fields(
+            case,
+            None,
+            "SC-109[0].Page2[0].Header[0].CaseNumber[0]",
+            "SC-109[0].Page2[0].Header[0].CaseName[0]",
+        ),
 
         # 1. Helper's name, address, and relationship to the plaintiff
         "SC-109[0].Page1[0].List1[0].li1[0].NameField[0]": helper.get("name", ""),
