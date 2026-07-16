@@ -5,20 +5,23 @@ Run:  streamlit run app.py
 """
 
 import contextlib
+import hashlib
 import io
 import json
 import os
 import re
+import hmac
 import sys
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 from dateutil import parser as _dateutil
 from docx import Document
+from extra_streamlit_components import CookieManager
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
@@ -43,6 +46,9 @@ from storage import (
 _META_SC100 = str(HERE / "field_meta" / "sc100_fields.json")
 _META_FW001 = str(HERE / "field_meta" / "fw001_fields.json")
 _TPL = HERE / "templates"
+_ADMIN_COOKIE_NAME = "bhu_admin_session"
+_ADMIN_COOKIE_DAYS = 30
+_cookie_manager = CookieManager(key="bhu_admin_cookie")
 
 
 def _normalize_plain_language(text: str) -> str:
@@ -1078,6 +1084,94 @@ def _case_matches_query(case: dict, query: str) -> bool:
     return bool(token and token in _slug(haystack))
 
 
+def _admin_cookie_key(user: dict) -> bytes:
+    return f"{user.get('salt', '')}:{user.get('hash', '')}".encode("utf-8")
+
+
+def _build_admin_cookie(username: str) -> tuple[str, datetime] | None:
+    users = _acct_load()
+    username = username.strip().lower()
+    user = users.get(username)
+    if not user:
+        return None
+    expires_at = datetime.now() + timedelta(days=_ADMIN_COOKIE_DAYS)
+    payload = f"{username}|{int(expires_at.timestamp())}"
+    signature = hmac.new(_admin_cookie_key(user), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{payload}|{signature}", expires_at
+
+
+def _verify_admin_cookie(cookie_value: str) -> str | None:
+    try:
+        username, expires_at_raw, signature = str(cookie_value).split("|", 2)
+        expires_at = int(expires_at_raw)
+    except Exception:
+        return None
+
+    if expires_at < int(datetime.now().timestamp()):
+        return None
+
+    users = _acct_load()
+    username = username.strip().lower()
+    user = users.get(username)
+    if not user:
+        return None
+
+    expected = hmac.new(
+        _admin_cookie_key(user),
+        f"{username}|{expires_at_raw}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return None
+    return username
+
+
+def _restore_admin_session_from_cookie() -> None:
+    if st.session_state.get("bhu_admin_user"):
+        return
+    try:
+        cookie_value = _cookie_manager.get(_ADMIN_COOKIE_NAME)
+    except Exception:
+        return
+    if not cookie_value:
+        return
+    username = _verify_admin_cookie(cookie_value)
+    if username:
+        st.session_state["bhu_admin_user"] = username
+
+
+def _remember_admin_session(username: str) -> None:
+    built = _build_admin_cookie(username)
+    if not built:
+        return
+    cookie_value, expires_at = built
+    try:
+        _cookie_manager.set(
+            _ADMIN_COOKIE_NAME,
+            cookie_value,
+            expires_at=expires_at,
+            path="/",
+            secure=True,
+            same_site="strict",
+        )
+    except Exception:
+        pass
+
+
+def _forget_admin_session() -> None:
+    try:
+        _cookie_manager.delete(_ADMIN_COOKIE_NAME)
+    except Exception:
+        pass
+
+
+def _dashboard_requested() -> bool:
+    try:
+        return str(st.query_params.get("view", "")).strip().lower() == "dashboard"
+    except Exception:
+        return False
+
+
 def _find_resume_case(identifier: str) -> dict | None:
     token = str(identifier or "").strip()
     if not token:
@@ -1537,24 +1631,28 @@ def _render_admin_portal(user: str) -> None:
 
 
 _pop = st.popover if hasattr(st, "popover") else (lambda label, **_k: st.expander(label))
+_restore_admin_session_from_cookie()
+if st.session_state.get("bhu_admin_user") and _dashboard_requested():
+    st.session_state["bhu_view_mode"] = "dashboard"
 _title_l, _title_r = st.columns([5, 1])
 with _title_l:
     st.title("California Encampment — Small Claims Autofiller")
 with _title_r:
     _signed_in = st.session_state.get("bhu_admin_user")
     if _signed_in:
-        if st.button(
+        st.link_button(
             "Dashboard",
+            "?view=dashboard",
             use_container_width=True,
-            key="portal_dashboard",
             help="Open the officer dashboard with claims data and the media tracker.",
-        ):
-            st.session_state["bhu_view_mode"] = "dashboard"
-            st.rerun()
+            type="primary",
+            icon="📊",
+        )
         with _pop(f"👤 {_signed_in}", use_container_width=True):
             if st.button("Sign out", use_container_width=True, key="portal_signout"):
                 st.session_state.pop("bhu_admin_user", None)
                 st.session_state.pop("bhu_view_mode", None)
+                _forget_admin_session()
                 st.rerun()
     else:
         with _pop("🔐 Sign In", use_container_width=True):
@@ -1573,6 +1671,7 @@ with _title_r:
                             st.error(err)
                         else:
                             st.session_state["bhu_admin_user"] = nu.strip().lower()
+                            _remember_admin_session(nu)
                             st.rerun()
             else:
                 lu = st.text_input("Username", key="portal_login_user")
@@ -1580,6 +1679,7 @@ with _title_r:
                 if st.button("Sign in", key="portal_login", use_container_width=True):
                     if _acct_verify(_users, lu, lp):
                         st.session_state["bhu_admin_user"] = lu.strip().lower()
+                        _remember_admin_session(lu)
                         st.rerun()
                     else:
                         st.error("Wrong username or password.")
@@ -1747,22 +1847,22 @@ tab_manual, tab_sheet = st.tabs(["📝 Manual Entry", "📊 Spreadsheet Import"]
 
 with tab_manual:
     # ════════════════════════════════════════════════════
-    # STEP 1 — GOVERNMENT CLAIM (file this first)
+    # STEP 1 — GOVERNMENT CLAIM (optional; file this first only when suing government)
     # ════════════════════════════════════════════════════
-    st.header("Step 1 — Government Claim")
+    st.header("Step 1 — Government Claim (optional)")
     st.caption(
-        "Before you can sue a California city or public entity for property "
-        "destroyed in a sweep, you must first file a government tort claim "
-        "(Gov. Code §§ 905, 910) with that entity — generally within six months "
-        "of the incident. Fill in your information and the incident below, "
-        "then either upload your jurisdiction's own claim form (PDF) to "
-        "auto-fill it, or generate a generic claim form to file with the "
-        "City Clerk. The entity being claimed against comes from the "
+        "This is a separate, optional path. Use it only if you are suing a "
+        "California city or other public entity, because those cases usually "
+        "require a government tort claim first (Gov. Code §§ 905, 910). "
+        "If you are not suing the government, skip this step and go straight "
+        "to Step 2. You can either upload your jurisdiction's own claim form "
+        "(PDF) to auto-fill it, or generate a generic claim form to file with "
+        "the City Clerk. The entity being claimed against comes from the "
         "Defendant section in Step 2."
     )
 
-    # ── Plaintiff ──────────────────────────────────────────────────────
-    st.subheader("Plaintiff")
+    # ── Your name and information ──────────────────────────────────────
+    st.subheader("Your name and information")
     c1, c2 = st.columns(2)
     with c1:
         name   = st.text_input("Full Legal Name *", placeholder="Jane Doe", key="manual_name")
@@ -2210,23 +2310,14 @@ with tab_manual:
         manual_case["defendant"].get("name", ""),
         any(dd.get("name") for dd in manual_case.get("additional_defendants") or []),
     ])
-    if _manual_has_content:
-        try:
-            _save_manual_case(manual_case)
-        except Exception:
-            pass
-
     # ── Handle submission / save-progress ──────────────────────────────────
     if submitted or save_progress:
         case = manual_case
-        try:
-            _save_manual_case(case)
+        if _manual_has_content:
             st.info(
                 f"Draft case number: **{case['internal_case_number']}** — "
                 "the current intake was saved automatically."
             )
-        except Exception as e:
-            st.warning(f"Could not save the intake record: {e}")
 
         if save_progress and not submitted:
             st.success(
