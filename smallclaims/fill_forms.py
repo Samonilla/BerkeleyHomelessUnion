@@ -14,6 +14,7 @@ import sys
 import os
 import re
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -129,6 +130,17 @@ DEFENDANT_DEFAULTS = {
         "agent_zip": "94612",
     }
 }
+
+
+def _forms_generated_date(case: dict | None = None) -> str:
+    """Return the generation date in MM/DD/YYYY format."""
+    stamp = str((case or {}).get("forms_generated_at") or "").strip()
+    if stamp:
+        try:
+            return datetime.fromisoformat(stamp.replace("Z", "+00:00")).strftime("%m/%d/%Y")
+        except Exception:
+            pass
+    return datetime.now().strftime("%m/%d/%Y")
 
 
 
@@ -299,6 +311,7 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
     d = case.get("defendant", DEFENDANT_DEFAULTS["city_of_oakland"])
     claim = case["claim"]
     filing = case.get("filing", {})
+    generated_date = _forms_generated_date(case)
 
     values = {
         # Header
@@ -387,7 +400,7 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
         ),
 
         # Signature
-        "SC-100[0].Page4[0].Sign[0].Date1[0]":          filing.get("filing_date", ""),
+        "SC-100[0].Page4[0].Sign[0].Date1[0]":          generated_date,
         "SC-100[0].Page4[0].Sign[0].PlaintiffName1[0]":  p["name"],
 
         # Repeated caption fields
@@ -413,7 +426,7 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
     meta = load_field_meta(field_meta_path)
     p = case["plaintiff"]
     fw = case.get("fee_waiver", {})
-    filing = case.get("filing", {})
+    generated_date = _forms_generated_date(case)
 
     basis = fw.get("basis", "5c")  # "5a" | "5b" | "5c"
 
@@ -469,7 +482,7 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
         ),
 
         # Signature
-        "FW-001[0].Page1[0].Sign[0].SigDate[0]":        filing.get("filing_date", ""),
+        "FW-001[0].Page1[0].Sign[0].SigDate[0]":        generated_date,
         "FW-001[0].Page1[0].Sign[0].PetitionerName[0]": p["name"],
 
         # Page 2 caption + income
@@ -524,6 +537,7 @@ def fill_sc105(case, template_path, output_path):
     d = case.get("defendant", DEFENDANT_DEFAULTS["city_of_oakland"])
     svc = case.get("service", {})
     cn = _case_name(case)
+    generated_date = _forms_generated_date(case)
 
     values = {
         **_caption_fields(
@@ -538,7 +552,7 @@ def fill_sc105(case, template_path, output_path):
         "SC-105[0].Page1[0].List1[0].Item[0].FullName2[0]": d.get("name", "City of Oakland"),
 
         # Signature
-        "SC-105[0].Page1[0].Sign[0].SigDate4[0]": svc.get("service_date", ""),
+        "SC-105[0].Page1[0].Sign[0].SigDate4[0]": generated_date,
         "SC-105[0].Page1[0].Sign[0].SigName[0]":  svc.get("server_name", p["name"]),
 
         **_caption_fields(
@@ -656,11 +670,11 @@ def fill_sc150(case, template_path, output_path):
         served              list of up to 2 {name, county, date} dicts (6b)
         unserved_names      list of up to 2 names (6c)
         unknown_names       list of up to 2 names (6d)
-        request_date        signature date, defaults to filing.filing_date
+        request_date        signature date, defaults to forms generated date
     """
     p = case["plaintiff"]
     post = case.get("postponement", {}) or {}
-    filing = case.get("filing", {})
+    generated_date = _forms_generated_date(case)
     cn = _case_name(case)
 
     requester = post.get("requester_name") or p["name"]
@@ -730,7 +744,7 @@ def fill_sc150(case, template_path, output_path):
         "SC-150[0].Page1[0].List6[0].Lid[0].FillText22[0]": nth(unknown, 1),
 
         # Signature (declaration under penalty of perjury)
-        "SC-150[0].Page1[0].sign[0].Date1[0]":     post.get("request_date", filing.get("filing_date", "")),
+        "SC-150[0].Page1[0].sign[0].Date1[0]":     generated_date,
         "SC-150[0].Page1[0].sign[0].printname[0]": requester,
     }
 
@@ -882,6 +896,7 @@ def fill_sc109(case, template_path, output_path):
     """
     p = case["plaintiff"]
     helper = case.get("assistant", {}) or {}
+    generated_date = _forms_generated_date(case)
 
     values = {
         **_caption_fields(
@@ -912,7 +927,7 @@ def fill_sc109(case, template_path, output_path):
         "SC-109[0].Page2[0].List4[0].li1[0].Field12[0]": helper.get("reason", ""),
 
         # 5. Date + printed name (the helper signs)
-        "SC-109[0].Page2[0].List5[0].li1[0].FillText8[0]": helper.get("date", case.get("filing", {}).get("filing_date", "")),
+        "SC-109[0].Page2[0].List5[0].li1[0].FillText8[0]": generated_date,
         "SC-109[0].Page2[0].List5[0].li1[0].FillText9[0]": helper.get("name", ""),
     }
 
@@ -946,6 +961,7 @@ def _render_sc100a_reportlab(party: dict, case: dict, output_path: str, role: st
 
     c = Canvas(output_path, pagesize=letter)
     width, height = letter
+    generated_date = _forms_generated_date(case)
 
     def tx(x, y, text, size=10):
         c.setFont("Helvetica", size)
@@ -982,7 +998,7 @@ def _render_sc100a_reportlab(party: dict, case: dict, output_path: str, role: st
 
     tx(inch * 0.5, y, "I declare under penalty of perjury under California state law that the information above and on any attachments is true and correct.")
     y -= 28
-    tx(inch * 0.5, y, "Date: ________________________     Type or print your name: ________________________     Sign your name: ________________________")
+    tx(inch * 0.5, y, f"Date: {generated_date}     Type or print your name: ________________________     Sign your name: ________________________")
 
     c.showPage()
     c.save()
