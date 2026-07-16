@@ -200,6 +200,19 @@ def validate_case(case):
             "claim.govt_claim_filed_date is required when suing a public entity"
         )
 
+    fee_waiver = case.get("fee_waiver") or {}
+    basis = str(fee_waiver.get("basis") or "").strip().lower()
+    if basis == "5a":
+        has_public_benefit = any([
+            bool(fee_waiver.get("receives_medi_cal")),
+            bool(fee_waiver.get("receives_snap")),
+            bool(fee_waiver.get("receives_calworks")),
+        ])
+        if not has_public_benefit:
+            errors.append(
+                "fee_waiver requires at least one selected public benefit when basis is 5a"
+            )
+
     if errors:
         raise ValueError(
             "Case validation failed:\n" + "\n".join(f"  • {e}" for e in errors)

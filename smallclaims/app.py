@@ -2452,10 +2452,19 @@ with tab_manual:
                 exp_housing = st.text_input("Housing ($)", value="0", key="manual_exp_housing")
                 total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300", key="manual_total_expenses")
 
+    _missing_5a_public_benefit = fw_basis.startswith("5a") and not any([
+        bool(recv_medi_cal),
+        bool(recv_snap),
+        bool(recv_calworks),
+    ])
+    if _missing_5a_public_benefit:
+        st.warning("For 5a, select at least one public benefit before generating forms.")
+
     _gen_col, _save_col = st.columns([3, 1])
     with _gen_col:
         submitted = st.button(
-            "Generate Forms", type="primary", use_container_width=True
+            "Generate Forms", type="primary", use_container_width=True,
+            disabled=_missing_5a_public_benefit,
         )
 
     declaration_text = st.session_state.get("declaration_text", "").strip()
