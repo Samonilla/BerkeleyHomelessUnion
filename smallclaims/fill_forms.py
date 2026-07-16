@@ -539,7 +539,7 @@ def fill_sc105(case, template_path, output_path):
 # SC-109  Claim of Exemption / Request re: defendant
 # ─────────────────────────────────────────────────────────────
 
-def fill_sc109(case, template_path, output_path):
+def fill_sc109_exemption(case, template_path, output_path):
     p = case["plaintiff"]
     cn = _case_name(case)
 
@@ -569,7 +569,7 @@ def fill_sc109(case, template_path, output_path):
     }
 
     _write_pdf(template_path, output_path, values)
-    print(f"  ✓ SC-109  → {output_path}")
+    print(f"  ✓ SC-109 exemption → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
