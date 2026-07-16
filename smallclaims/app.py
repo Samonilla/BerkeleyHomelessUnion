@@ -1913,16 +1913,38 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
         out["is_corporation"] = bool(is_corporation)
 
         if is_corporation:
+            agent_name_key = f"{kp}_agent_name"
+            agent_title_key = f"{kp}_agent_title"
+            agent_street_key = f"{kp}_agent_street"
+            agent_city_key = f"{kp}_agent_city"
+            agent_zip_key = f"{kp}_agent_zip"
+
+            auto_agent_name = f"{name_v.strip()}, Front Desk Clerk" if name_v.strip() else ""
+            auto_agent_street = street_v.strip()
+            auto_agent_city = city_v.strip()
+            auto_agent_zip = zip_v.strip()
+
+            # Seed corporation agent fields once from the current defendant entry
+            # so users can tab through without losing edits.
+            if not str(st.session_state.get(agent_name_key, "")).strip():
+                st.session_state[agent_name_key] = auto_agent_name
+            if not str(st.session_state.get(agent_street_key, "")).strip():
+                st.session_state[agent_street_key] = auto_agent_street
+            if not str(st.session_state.get(agent_city_key, "")).strip():
+                st.session_state[agent_city_key] = auto_agent_city
+            if not str(st.session_state.get(agent_zip_key, "")).strip():
+                st.session_state[agent_zip_key] = auto_agent_zip
+
             out["agent_name"]    = st.text_input(
-                "Agent for Service (Name)", value=d["agent_name"], key=f"{kp}_agent_name",
+                "Agent for Service (Name)", key=agent_name_key,
                 help="Who accepts legal papers for the defendant. For a city this is "
                      "usually the City Clerk; leave blank when suing an individual.",
             ).strip()
-            out["agent_title"]   = st.text_input("Agent Title", value=d["agent_title"], key=f"{kp}_agent_title").strip()
-            out["agent_address"] = st.text_input("Agent Street", value=d["agent_address"], key=f"{kp}_agent_street").strip()
-            out["agent_city"]    = st.text_input("Agent City", value=d["agent_city"], key=f"{kp}_agent_city").strip()
+            out["agent_title"]   = st.text_input("Agent Title", key=agent_title_key).strip()
+            out["agent_address"] = st.text_input("Agent Street", key=agent_street_key).strip()
+            out["agent_city"]    = st.text_input("Agent City", key=agent_city_key).strip()
             out["agent_state"]   = "CA"
-            out["agent_zip"]     = st.text_input("Agent ZIP", value=d["agent_zip"], key=f"{kp}_agent_zip").strip()
+            out["agent_zip"]     = st.text_input("Agent ZIP", key=agent_zip_key).strip()
 
     if out["name"]:
         st.caption(f"**{out['name']}** · {out['address']}, {out['city']}, {out['state']} {out['zip']}")
