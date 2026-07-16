@@ -912,6 +912,47 @@ def _load_case_records() -> list:
 
 _CUSTOM_DEFENDANT = "✏️ No prefill — enter any defendant (person, county, unincorporated area…)"
 
+_ITEMS_EDITOR_COLUMNS = ["Description", "Value ($)", "Condition"]
+
+
+def _blank_items_editor_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Description": ["", "", ""],
+            "Value ($)": ["", "", ""],
+            "Condition": ["New", "Good", "Fair"],
+        }
+    )
+
+
+def _normalize_items_editor_df(raw_value) -> pd.DataFrame:
+    # Legacy/session data can be a DataFrame, list-of-rows, or widget-state dict.
+    if isinstance(raw_value, pd.DataFrame):
+        df = raw_value.copy()
+    elif isinstance(raw_value, list):
+        df = pd.DataFrame(raw_value)
+    else:
+        df = pd.DataFrame()
+
+    if df.empty:
+        return _blank_items_editor_df()
+
+    rename_map = {
+        "description": "Description",
+        "value": "Value ($)",
+        "condition": "Condition",
+    }
+    df = df.rename(columns=rename_map)
+
+    for col in _ITEMS_EDITOR_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+
+    if "Condition" in df.columns:
+        df["Condition"] = df["Condition"].replace("", "Good").fillna("Good")
+
+    return df[_ITEMS_EDITOR_COLUMNS]
+
 
 def _resume_case_defaults(case: dict) -> dict:
     plaintiff = case.get("plaintiff") or {}
@@ -931,7 +972,16 @@ def _resume_case_defaults(case: dict) -> dict:
         date_start, date_end, date_range = incident_date, "", False
 
     items = [item for item in (claim.get("items") or []) if str(item.get("description") or "").strip()]
-    item_rows = items or [{"Description": "", "Value ($)": "", "Condition": "New"} for _ in range(3)]
+    item_rows = [
+        {
+            "Description": str(item.get("description") or "").strip(),
+            "Value ($)": str(item.get("value") or "").strip(),
+            "Condition": str(item.get("condition") or "").strip() or "Good",
+        }
+        for item in items
+    ]
+    if not item_rows:
+        item_rows = [{"Description": "", "Value ($)": "", "Condition": "New"} for _ in range(3)]
 
     defaults = {
         "manual_name": plaintiff.get("name", ""),
@@ -949,7 +999,7 @@ def _resume_case_defaults(case: dict) -> dict:
         "manual_claim_amount": claim.get("amount", ""),
         "manual_involved_employees": claim.get("employees", ""),
         "manual_claim_reason": claim.get("reason", ""),
-        "manual_items_editor": pd.DataFrame(item_rows),
+        "manual_items_editor_data": pd.DataFrame(item_rows),
         "manual_filing_date": filing.get("filing_date", ""),
         "manual_govt_claim_date": claim.get("govt_claim_filed_date", ""),
         "manual_declaration_text": declaration.get("content", claim.get("reason", "")),
@@ -1925,15 +1975,12 @@ with tab_manual:
     st.divider()
     st.subheader("Itemized Property")
     st.caption("List each item that was destroyed, its estimated value, and its condition before the loss.")
+    _raw_items_value = st.session_state.get("manual_items_editor_data")
+    if _raw_items_value is None:
+        _raw_items_value = st.session_state.get("manual_items_editor")
+    _initial_items_df = _normalize_items_editor_df(_raw_items_value)
     items_df = st.data_editor(
-        st.session_state.get(
-            "manual_items_editor",
-            pd.DataFrame({
-                "Description": ["", "", ""],
-                "Value ($)": ["", "", ""],
-                "Condition": ["New", "Good", "Fair"],
-            }),
-        ),
+        _initial_items_df,
         num_rows="dynamic",
         use_container_width=True,
         column_config={
@@ -1945,8 +1992,9 @@ with tab_manual:
             ),
         },
         hide_index=True,
-        key="manual_items_editor",
+        key="manual_items_editor_widget",
     )
+    st.session_state["manual_items_editor_data"] = _normalize_items_editor_df(items_df)
 
     def _items_from_editor() -> list:
         out = []
