@@ -903,6 +903,9 @@ def _load_case_records() -> list:
     return [case for _, case in _load_case_files()]
 
 
+_CUSTOM_DEFENDANT = "✏️ No prefill — enter any defendant (person, county, unincorporated area…)"
+
+
 def _resume_case_defaults(case: dict) -> dict:
     plaintiff = case.get("plaintiff") or {}
     claim = case.get("claim") or {}
@@ -1558,7 +1561,7 @@ _save_pop = st.popover if hasattr(st, "popover") else (lambda label, **_k: st.ex
 top_save_l, top_save_r = st.columns([1, 1])
 with top_save_l:
     save_progress = st.button(
-        "💾 Save Progress",
+        "🗂️ Save Progress",
         use_container_width=True,
         help="Save everything entered so far without generating forms.",
     )
@@ -1627,10 +1630,6 @@ def _court_selector(key_prefix: str, default_county: str = "Alameda") -> dict:
         "city":    chosen["city"],
         "zip":     chosen["zip"],
     }
-
-_CUSTOM_DEFENDANT = "✏️ No prefill — enter any defendant (person, county, unincorporated area…)"
-
-
 def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
     """One defendant entry: fully editable fields for suing anyone — a
     person, business, county agency, or city. An optional dropdown prefills
