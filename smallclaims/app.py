@@ -37,6 +37,7 @@ from storage import (
     slug as _slug,
     capture_case_record as _capture_case_record,
     load_cases as _load_case_files,
+    save_case as _save_case,
 )
 
 _META_SC100 = str(HERE / "field_meta" / "sc100_fields.json")
@@ -962,6 +963,7 @@ def _resume_case_defaults(case: dict) -> dict:
         "manual_exp_housing": fee.get("expense_housing", "0"),
         "manual_total_expenses": fee.get("total_monthly_expenses", ""),
         "manual_resume_identifier": str(case.get("internal_case_number") or "").strip(),
+        "manual_draft_case_id": str(case.get("internal_case_number") or "").strip(),
         "manual_resume_case": case,
     }
 
@@ -1011,6 +1013,35 @@ def _resume_case_defaults(case: dict) -> dict:
 def _apply_resume_case(case: dict) -> None:
     for key, value in _resume_case_defaults(case).items():
         st.session_state[key] = value
+
+
+def _manual_case_id(case: dict) -> str:
+    case_id = str(
+        case.get("internal_case_number")
+        or st.session_state.get("manual_draft_case_id")
+        or ""
+    ).strip()
+    if not case_id:
+        plaintiff = (case.get("plaintiff") or {}).get("name", "")
+        initials = "".join(
+            w[0].upper() for w in re.split(r"\s+", (plaintiff or "").strip())
+            if w and w[0].isalpha()
+        )
+        case_id = f"{datetime.now():%Y%m%d-%H%M%S}-{initials or 'XX'}"
+    st.session_state["manual_draft_case_id"] = case_id
+    case["internal_case_number"] = case_id
+    return case_id
+
+
+def _save_manual_case(case: dict) -> None:
+    case_id = _manual_case_id(case)
+    case["captured_at"] = case.get("captured_at") or st.session_state.get(
+        "manual_captured_at"
+    ) or datetime.now().isoformat(timespec="seconds")
+    st.session_state["manual_captured_at"] = case["captured_at"]
+    out_dir = _primary_cases_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _save_case(out_dir / f"{case_id}.json", case)
 
 
 def _resume_case_label(case: dict) -> str:
@@ -2100,13 +2131,9 @@ with tab_manual:
         disabled=not declaration_text.strip(),
     )
 
-    # ── Handle submission / save-progress ──────────────────────────────────
-    if submitted or save_progress:
-        items = _items_from_editor()
+    def _manual_case_from_inputs() -> dict:
         basis_code = fw_basis.split(" — ")[0].strip()
-
-        _defendant = manual_defendants[0]
-
+        _primary_defendant = manual_defendants[0] if manual_defendants else DEFENDANT_DEFAULTS["city_of_oakland"]
         case = {
             "court": manual_court,
             "plaintiff": {
@@ -2118,14 +2145,14 @@ with tab_manual:
                 "phone":  phone.strip(),
                 "email":  email.strip(),
             },
-            "defendant": _defendant,
+            "defendant": _primary_defendant,
             "claim": {
                 "amount":                claim_amount.strip(),
                 "reason":                claim_reason.strip(),
                 "incident_date":         incident_date.strip(),
                 "damages_calculation":   damages_calc.strip() or claim_reason.strip(),
                 "govt_claim_filed_date": govt_claim_date.strip(),
-                "items":                 items,
+                "items":                 _items_from_editor(),
             },
             "filing": {
                 "filing_date":      filing_date.strip(),
@@ -2152,7 +2179,7 @@ with tab_manual:
                 "content":        declaration_text.strip() or claim_reason.strip(),
             },
             "subpoena": {
-                "case_caption":     f"{name.strip()} v. {_defendant.get('name') or 'City of Oakland'}",
+                "case_caption":     f"{name.strip()} v. {_primary_defendant.get('name') or 'City of Oakland'}",
                 "to":               st.session_state.get("sub_recipient_name", "").strip(),
                 "custodian":        st.session_state.get("sub_recipient_custodian", "").strip(),
                 "service_location": st.session_state.get("sub_recipient_service", "").strip(),
@@ -2167,28 +2194,44 @@ with tab_manual:
                 "materiality": st.session_state.get("sub_materiality", "").strip(),
             },
         }
-
-        # Attach additional defendants (each generates a filled SC-100A)
-        case['additional_defendants'] = [
-            dd for dd in manual_defendants[1:] if dd.get('name')
+        case["additional_defendants"] = [
+            dd for dd in manual_defendants[1:] if dd.get("name")
         ]
+        return case
 
-        # Capture the full intake under an internal case number before
-        # generating anything, so the information is kept even if a form fails.
+    manual_case = _manual_case_from_inputs()
+    _manual_has_content = any([
+        manual_case["plaintiff"]["name"],
+        manual_case["claim"]["amount"],
+        manual_case["claim"]["reason"],
+        manual_case["claim"]["incident_date"],
+        manual_case["claim"]["govt_claim_filed_date"],
+        manual_case["declaration"]["content"],
+        manual_case["defendant"].get("name", ""),
+        any(dd.get("name") for dd in manual_case.get("additional_defendants") or []),
+    ])
+    if _manual_has_content:
         try:
-            _capture_case_record(case)
+            _save_manual_case(manual_case)
+        except Exception:
+            pass
+
+    # ── Handle submission / save-progress ──────────────────────────────────
+    if submitted or save_progress:
+        case = manual_case
+        try:
+            _save_manual_case(case)
             st.info(
-                f"Internal case number: **{case['internal_case_number']}** — "
-                "the full intake was saved to the cases folder."
+                f"Draft case number: **{case['internal_case_number']}** — "
+                "the current intake was saved automatically."
             )
         except Exception as e:
-            case.setdefault("internal_case_number", f"{datetime.now():%Y%m%d}-XX")
             st.warning(f"Could not save the intake record: {e}")
 
         if save_progress and not submitted:
             st.success(
                 "Progress saved. Come back anytime — re-saving on the same "
-                "day updates the same record — and officers can review and "
+                "record updates the same file — and officers can review and "
                 "correct everything in the case tracker."
             )
         else:
@@ -2198,7 +2241,7 @@ with tab_manual:
                 # tracking in the officer portal) and refresh the record.
                 case["forms_generated_at"] = datetime.now().isoformat(timespec="seconds")
                 try:
-                    _capture_case_record(case)
+                    _save_manual_case(case)
                 except Exception:
                     pass
                 _show_downloads(pdfs, _slug(name.strip()))
