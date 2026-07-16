@@ -1915,9 +1915,6 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
         if is_corporation:
             agent_name_key = f"{kp}_agent_name"
             agent_title_key = f"{kp}_agent_title"
-            agent_street_key = f"{kp}_agent_street"
-            agent_city_key = f"{kp}_agent_city"
-            agent_zip_key = f"{kp}_agent_zip"
 
             auto_agent_name = name_v.strip()
             auto_agent_title = "Front Desk Clerk"
@@ -1931,12 +1928,6 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
                 st.session_state[agent_name_key] = auto_agent_name
             if not str(st.session_state.get(agent_title_key, "")).strip():
                 st.session_state[agent_title_key] = auto_agent_title
-            if not str(st.session_state.get(agent_street_key, "")).strip():
-                st.session_state[agent_street_key] = auto_agent_street
-            if not str(st.session_state.get(agent_city_key, "")).strip():
-                st.session_state[agent_city_key] = auto_agent_city
-            if not str(st.session_state.get(agent_zip_key, "")).strip():
-                st.session_state[agent_zip_key] = auto_agent_zip
 
             out["agent_name"]    = st.text_input(
                 "Agent for Service (Name)", key=agent_name_key,
@@ -1944,10 +1935,10 @@ def _defendant_block(key_prefix: str, def_id: int, is_primary: bool) -> dict:
                      "usually the City Clerk; leave blank when suing an individual.",
             ).strip()
             out["agent_title"]   = st.text_input("Agent Title", key=agent_title_key).strip()
-            out["agent_address"] = st.text_input("Agent Street", key=agent_street_key).strip()
-            out["agent_city"]    = st.text_input("Agent City", key=agent_city_key).strip()
-            out["agent_state"]   = "CA"
-            out["agent_zip"]     = st.text_input("Agent ZIP", key=agent_zip_key).strip()
+            out["agent_address"] = st.text_input("Agent Street", value=auto_agent_street, disabled=True)
+            out["agent_city"]    = st.text_input("Agent City", value=auto_agent_city, disabled=True)
+            out["agent_state"]   = st.text_input("Agent State", value=str(out["state"]), disabled=True)
+            out["agent_zip"]     = st.text_input("Agent ZIP", value=auto_agent_zip, disabled=True)
 
     if out["name"]:
         st.caption(f"**{out['name']}** · {out['address']}, {out['city']}, {out['state']} {out['zip']}")
