@@ -46,6 +46,7 @@ def _slug(name: str) -> str:
 # ─── Internal case numbers & intake capture ───────────────────────────────────
 
 _DEFAULT_CASES_DIR = HERE / "cases"
+_PERSISTENT_CASES_DIR = Path("/mount/data/bhu_cases")
 
 
 def _case_dirs() -> list[Path]:
@@ -57,9 +58,9 @@ def _case_dirs() -> list[Path]:
     env_dir = (os.environ.get("BHU_CASES_DIR") or "").strip()
     candidates = [
         Path(env_dir).expanduser() if env_dir else _DEFAULT_CASES_DIR,
+        _PERSISTENT_CASES_DIR,
         _DEFAULT_CASES_DIR,
         HERE.parent / "cases",
-        Path("/mount/data/bhu_cases"),
         Path("/mount/src/berkeleyhomelessunion/cases"),
         Path("/mount/src/berkeleyhomelessunion/smallclaims/cases"),
     ]
@@ -358,10 +359,13 @@ def _fill_uploaded_claim_pdf(pdf_bytes: bytes, data: dict):
         writer.update_page_form_field_values(page, values)
     try:
         root = writer._root_object
-        if NameObject("/AcroForm") in root:
-            root[NameObject("/AcroForm")].update(
-                {NameObject("/NeedAppearances"): BooleanObject(True)}
-            )
+        acro = None
+        try:
+            acro = root.get(NameObject("/AcroForm")) if hasattr(root, "get") else None
+        except Exception:
+            acro = None
+        if acro is not None and hasattr(acro, "update"):
+            acro.update({NameObject("/NeedAppearances"): BooleanObject(True)})
         else:
             root.update({NameObject("/AcroForm"): DictionaryObject(
                 {NameObject("/NeedAppearances"): BooleanObject(True)}
@@ -997,16 +1001,101 @@ def _portal_date(s):
         return None
 
 
+# ─── Case pipeline: the stages a claimant moves through ───────────────────────
+# One source of truth for stage + defendant grouping, reused across the portal.
+# Stage keys map onto the canonical STATUSES vocabulary from the case tracker.
+_PIPELINE = [
+    ("intake",     "Intake",        "📝"),
+    ("govt_claim", "Govt claim",    "🏛️"),
+    ("filed",      "Lawsuit filed", "⚖️"),
+    ("trial_prep", "Trial prep",    "📎"),
+    ("judgment",   "Judgment",      "🏁"),
+]
+_PIPELINE_INDEX = {k: i for i, (k, _l, _e) in enumerate(_PIPELINE)}
+
+
+def _stage_key(c: dict) -> str:
+    """Pipeline stage from the officer-set status — the single source of truth.
+    STATUSES already encodes the pipeline, so the status alone decides the stage."""
+    status = str((c.get("tracking") or {}).get("status", "Intake"))
+    if status.startswith(("Resolved", "Closed")):
+        return "judgment"
+    if status == "Trial Scheduled":
+        return "trial_prep"
+    if status == "Lawsuit Filed (SC-100)":
+        return "filed"
+    if status in ("Govt Claim Filed", "Claim Rejected / 45 Days Passed"):
+        return "govt_claim"
+    return "intake"
+
+
+def _stage_meta(c: dict):
+    key = _stage_key(c)
+    idx = _PIPELINE_INDEX[key]
+    return key, idx, _PIPELINE[idx][1], _PIPELINE[idx][2]
+
+
 def _case_stage(c: dict) -> str:
-    """Where this member is in the pipeline: draft → forms → filed."""
-    status = (c.get("tracking") or {}).get("status", "Intake")
-    if (c.get("lawsuit") or {}).get("filed_on") or status.startswith(
-        ("Lawsuit", "Trial", "Resolved", "Closed")
-    ):
-        return "⚖️ Filed"
-    if c.get("forms_generated_at"):
-        return "📄 Forms generated"
-    return "📝 Draft"
+    """Compact label for list rows, e.g. '⚖️ Lawsuit filed'."""
+    _k, _i, label, emoji = _stage_meta(c)
+    return f"{emoji} {label}"
+
+
+def _stage_bar_html(c: dict) -> str:
+    """A 5-step pipeline 'symbol' with the current stage highlighted."""
+    _k, idx, _label, _emoji = _stage_meta(c)
+    parts = []
+    for i, (_kk, lab, em) in enumerate(_PIPELINE):
+        if i < idx:
+            parts.append(f"<span style='color:#FFC700'>●&nbsp;{lab}</span>")
+        elif i == idx:
+            parts.append(
+                f"<span style='color:#FFC700;font-weight:700'>{em}&nbsp;{lab}</span>"
+            )
+        else:
+            parts.append(f"<span style='color:#6f6a55'>○&nbsp;{lab}</span>")
+    return "<div style='font-size:0.9em'>" + " &nbsp;→&nbsp; ".join(parts) + "</div>"
+
+
+def _defendant_key(c: dict) -> str:
+    """Normalized grouping key so co-plaintiffs against the same entity cluster."""
+    name = ((c.get("defendant") or {}).get("name") or "").strip().lower()
+    name = re.sub(r"[^a-z0-9 ]+", " ", name)
+    name = re.sub(r"^the\s+", "", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    return name or "unspecified"
+
+
+def _defendant_label(c: dict) -> str:
+    return ((c.get("defendant") or {}).get("name") or "").strip() or "Unspecified defendant"
+
+
+def _grouped_records(records: list) -> list:
+    """Records sorted so people suing the same defendant sit together,
+    most-sued defendants first — so a whole group pulls out easily for trial."""
+    counts = {}
+    for c in records:
+        counts[_defendant_key(c)] = counts.get(_defendant_key(c), 0) + 1
+    return sorted(
+        records,
+        key=lambda c: (-counts[_defendant_key(c)], _defendant_key(c),
+                       c.get("internal_case_number", "")),
+    )
+
+
+def _master_dataframe(records: list):
+    """One row per claimant, grouped by defendant, with derived stage +
+    defendant_group columns. Field columns come straight from the records,
+    so new intake fields appear automatically."""
+    recs = _grouped_records(records)
+    flat = pd.json_normalize(recs, sep=".")
+    flat.insert(0, "defendant_group", [_defendant_label(c) for c in recs])
+    flat.insert(1, "stage", [_case_stage(c) for c in recs])
+
+    def _cell(v):
+        return json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v
+
+    return flat.apply(lambda col: col.map(_cell)).fillna("")
 
 
 def _case_alerts(c: dict):
@@ -1044,8 +1133,65 @@ def _case_alerts(c: dict):
     return "", ""
 
 
+_PORTAL_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap');
+:root{
+  --bhu-black:#080808; --bhu-off:#101010; --bhu-rule:#2F2F2F;
+  --bhu-accent:#FFC700; --bhu-mid:#C8A900; --bhu-light:#F9E873; --bhu-text:#F5EFDC;
+}
+.stApp{ background:var(--bhu-black); }
+html, body, .stMarkdown, p, span, div, label, input, textarea, button{
+  font-family:'Inter', system-ui, sans-serif;
+}
+h1,h2,h3,h4,[data-testid="stHeading"]{
+  font-family:'Playfair Display', Georgia, serif !important;
+  color:var(--bhu-text) !important; letter-spacing:.01em;
+}
+[data-testid="stMetric"]{
+  background:var(--bhu-off); border:1px solid var(--bhu-rule);
+  border-radius:14px; padding:14px 18px;
+}
+[data-testid="stMetricValue"]{ font-family:'Playfair Display', Georgia, serif; color:var(--bhu-accent) !important; }
+[data-testid="stMetricLabel"] p{
+  text-transform:uppercase; letter-spacing:.14em; font-size:.72rem !important; color:var(--bhu-mid) !important;
+}
+button[data-baseweb="tab"]{ letter-spacing:.05em; }
+button[data-baseweb="tab"][aria-selected="true"]{ color:var(--bhu-accent) !important; }
+[data-baseweb="tab-highlight"]{ background-color:var(--bhu-accent) !important; }
+[data-testid="stExpander"]{
+  border:1px solid var(--bhu-rule) !important; border-radius:12px !important;
+  background:var(--bhu-off) !important; margin-bottom:10px; overflow:hidden;
+  transition:border-color .2s ease;
+}
+[data-testid="stExpander"]:hover{ border-color:var(--bhu-accent) !important; }
+[data-testid="stExpander"] summary{ padding:10px 16px; font-weight:600; }
+[data-testid="stExpander"] summary:hover{ color:var(--bhu-accent); }
+[data-testid="stExpander"] h5{
+  text-transform:uppercase; letter-spacing:.12em; font-size:.72rem !important;
+  color:var(--bhu-mid) !important; font-family:'Inter', sans-serif !important; margin-bottom:.15rem;
+}
+blockquote{ border-left:2px solid var(--bhu-mid) !important; color:var(--bhu-light) !important; }
+.stDownloadButton button, .stButton button{
+  background:var(--bhu-accent) !important; color:#080808 !important;
+  border:none !important; border-radius:999px !important;
+  font-weight:700 !important; letter-spacing:.02em;
+}
+.stDownloadButton button:hover, .stButton button:hover{ background:var(--bhu-light) !important; color:#080808 !important; }
+hr{ border-color:var(--bhu-rule) !important; }
+</style>
+"""
+
+
+def _inject_portal_css() -> None:
+    """Black & gold styling to match berkeleyhomelessunion.org — Playfair
+    headings, Inter body, gold accents, carded panels."""
+    st.markdown(_PORTAL_CSS, unsafe_allow_html=True)
+
+
 def _render_admin_portal(user: str) -> None:
     """Signed-in officers see the collected data instead of the intake form."""
+    _inject_portal_css()
     st.header("📋 Officer Data Portal")
     st.caption(
         f"Signed in as **{user}**. Everything the site has collected, one "
@@ -1145,7 +1291,26 @@ def _render_admin_portal(user: str) -> None:
             )
 
     with tab_people:
-        for c in records:
+        _grouped = _grouped_records(records)
+        _seen_group = None
+        for c in _grouped:
+            _dk = _defendant_key(c)
+            if _dk != _seen_group:
+                _seen_group = _dk
+                _peers = [x for x in _grouped if _defendant_key(x) == _dk]
+                _hcol, _bcol = st.columns([3, 1])
+                _hcol.markdown(
+                    f"### ⚖️ {_defendant_label(c)} · {len(_peers)} "
+                    f"claimant{'s' if len(_peers) != 1 else ''}"
+                )
+                _bcol.download_button(
+                    "⬇️ Group CSV",
+                    _master_dataframe(_peers).to_csv(index=False).encode(),
+                    file_name=f"group_{_slug(_defendant_label(c))}.csv",
+                    mime="text/csv",
+                    key=f"grpcsv_{_dk}",
+                    use_container_width=True,
+                )
             p = c.get("plaintiff") or {}
             cl = c.get("claim") or {}
             d = c.get("defendant") or {}
@@ -1156,6 +1321,7 @@ def _render_admin_portal(user: str) -> None:
                 f"· {_case_stage(c)} · {t.get('status', 'Intake')} · ${cl.get('amount', '—')}"
             )
             with st.expander(label):
+                st.markdown(_stage_bar_html(c), unsafe_allow_html=True)
                 a, b = st.columns(2)
                 with a:
                     st.markdown(
@@ -1213,19 +1379,16 @@ def _render_admin_portal(user: str) -> None:
 
     with tab_csv:
         st.caption(
-            "The same data flattened to one row per claimant, one column per "
-            "field — ready for spreadsheets or programming."
+            "One row per claimant, grouped so people suing the same defendant "
+            "sit together. Columns come straight from the intake records, so "
+            "new form fields show up here automatically."
         )
-
-        def _cell(v):
-            return json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v
-
-        flat = pd.json_normalize(records, sep=".").apply(lambda col: col.map(_cell))
-        st.dataframe(flat, use_container_width=True, height=420)
+        master = _master_dataframe(records)
+        st.dataframe(master, use_container_width=True, height=420)
         st.download_button(
-            "⬇️ Download CSV (all claimants, all fields)",
-            data=flat.to_csv(index=False).encode(),
-            file_name=f"bhu_claimants_{datetime.now():%Y%m%d}.csv",
+            "⬇️ Master CSV (all claimants, grouped by defendant)",
+            data=master.to_csv(index=False).encode(),
+            file_name=f"bhu_master_claims_{datetime.now():%Y%m%d}.csv",
             mime="text/csv",
             use_container_width=True,
         )

@@ -32,6 +32,7 @@ from dateutil import parser as _dateutil
 
 HERE = Path(__file__).parent
 _DEFAULT_CASES_DIR = HERE / "cases"
+_PERSISTENT_CASES_DIR = Path("/mount/data/bhu_cases")
 
 
 def _case_dirs() -> list[Path]:
@@ -43,9 +44,9 @@ def _case_dirs() -> list[Path]:
     env_dir = (os.environ.get("BHU_CASES_DIR") or "").strip()
     candidates = [
         Path(env_dir).expanduser() if env_dir else _DEFAULT_CASES_DIR,
+        _PERSISTENT_CASES_DIR,
         _DEFAULT_CASES_DIR,
         HERE.parent / "cases",
-        Path("/mount/data/bhu_cases"),
         Path("/mount/src/berkeleyhomelessunion/cases"),
         Path("/mount/src/berkeleyhomelessunion/smallclaims/cases"),
     ]
