@@ -31,82 +31,17 @@ from fill_forms import (
 )
 from courts import ALL_COUNTIES, courthouses_for_county, court_info_string
 from defendants import ALL_CITIES, defendant_info
+from storage import (
+    case_dirs as _case_dirs,
+    primary_cases_dir as _primary_cases_dir,
+    slug as _slug,
+    capture_case_record as _capture_case_record,
+    load_cases as _load_case_files,
+)
 
 _META_SC100 = str(HERE / "field_meta" / "sc100_fields.json")
 _META_FW001 = str(HERE / "field_meta" / "fw001_fields.json")
 _TPL = HERE / "templates"
-
-
-# ─── PDF helpers ──────────────────────────────────────────────────────────────
-
-def _slug(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "case"
-
-
-# ─── Internal case numbers & intake capture ───────────────────────────────────
-
-_DEFAULT_CASES_DIR = HERE / "cases"
-_PERSISTENT_CASES_DIR = Path("/mount/data/bhu_cases")
-
-
-def _case_dirs() -> list[Path]:
-    """Return case-storage dirs in read priority order.
-
-    BHU_CASES_DIR can point intake/admin to a shared persistent folder.
-    Legacy/default paths are also scanned so older records still appear.
-    """
-    env_dir = (os.environ.get("BHU_CASES_DIR") or "").strip()
-    candidates = [
-        Path(env_dir).expanduser() if env_dir else _DEFAULT_CASES_DIR,
-        _PERSISTENT_CASES_DIR,
-        _DEFAULT_CASES_DIR,
-        HERE.parent / "cases",
-        Path("/mount/src/berkeleyhomelessunion/cases"),
-        Path("/mount/src/berkeleyhomelessunion/smallclaims/cases"),
-    ]
-    uniq = []
-    seen = set()
-    for p in candidates:
-        k = str(p)
-        if k in seen:
-            continue
-        seen.add(k)
-        uniq.append(p)
-    return uniq
-
-
-def _primary_cases_dir() -> Path:
-    return _case_dirs()[0]
-
-
-def _internal_case_number(full_name: str) -> str:
-    """Internal case number: creation date (YYYYMMDD) + the person's initials.
-
-    Example: Jane Doe entered on 2026-07-12 → 20260712-JD
-    """
-    initials = "".join(
-        w[0].upper() for w in re.split(r"\s+", (full_name or "").strip())
-        if w and w[0].isalpha()
-    )
-    return f"{datetime.now():%Y%m%d}-{initials or 'XX'}"
-
-
-def _capture_case_record(case: dict) -> str:
-    """Assign an internal case number and save the full intake to cases/.
-
-    Everything entered for the individual is written to
-    cases/<number>_<name>.json (re-capturing the same person on the same
-    day updates their record).
-    """
-    pname = (case.get("plaintiff") or {}).get("name", "")
-    num = case.get("internal_case_number") or _internal_case_number(pname)
-    case["internal_case_number"] = num
-    record = {**case, "captured_at": datetime.now().isoformat(timespec="seconds")}
-    out_dir = _primary_cases_dir()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    with open(out_dir / f"{num}_{_slug(pname)}.json", "w") as f:
-        json.dump(record, f, indent=2)
-    return num
 
 
 def _normalize_plain_language(text: str) -> str:
@@ -965,30 +900,7 @@ def _admin_url() -> str:
 
 
 def _load_case_records() -> list:
-    by_key = {}
-    for d in _case_dirs():
-        if not d.exists():
-            continue
-        for path in sorted(d.glob("*.json")):
-            if path.name.startswith(("sample", "_")):
-                continue
-            try:
-                c = json.loads(path.read_text())
-            except Exception:
-                continue
-            if not (c.get("plaintiff") or {}).get("name"):
-                continue
-            key = (
-                str(c.get("internal_case_number") or "").strip(),
-                str((c.get("plaintiff") or {}).get("name") or "").strip().lower(),
-            )
-            prev = by_key.get(key)
-            if not prev:
-                by_key[key] = c
-                continue
-            if str(c.get("captured_at") or "") > str(prev.get("captured_at") or ""):
-                by_key[key] = c
-    return list(by_key.values())
+    return [case for _, case in _load_case_files()]
 
 
 def _portal_date(s):
@@ -2043,7 +1955,7 @@ with tab_manual:
                 "the full intake was saved to the cases folder."
             )
         except Exception as e:
-            case.setdefault("internal_case_number", _internal_case_number(name))
+            case.setdefault("internal_case_number", f"{datetime.now():%Y%m%d}-XX")
             st.warning(f"Could not save the intake record: {e}")
 
         if save_progress and not submitted:

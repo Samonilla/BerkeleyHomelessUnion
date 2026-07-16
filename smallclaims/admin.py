@@ -31,47 +31,18 @@ import streamlit as st
 from dateutil import parser as _dateutil
 
 HERE = Path(__file__).parent
-_DEFAULT_CASES_DIR = HERE / "cases"
-_PERSISTENT_CASES_DIR = Path("/mount/data/bhu_cases")
-
-
-def _case_dirs() -> list[Path]:
-    """Return case-storage dirs in read priority order.
-
-    BHU_CASES_DIR can point intake/admin to a shared persistent folder.
-    Legacy/default paths are also scanned so older records still appear.
-    """
-    env_dir = (os.environ.get("BHU_CASES_DIR") or "").strip()
-    candidates = [
-        Path(env_dir).expanduser() if env_dir else _DEFAULT_CASES_DIR,
-        _PERSISTENT_CASES_DIR,
-        _DEFAULT_CASES_DIR,
-        HERE.parent / "cases",
-        Path("/mount/src/berkeleyhomelessunion/cases"),
-        Path("/mount/src/berkeleyhomelessunion/smallclaims/cases"),
-    ]
-    uniq = []
-    seen = set()
-    for p in candidates:
-        k = str(p)
-        if k in seen:
-            continue
-        seen.add(k)
-        uniq.append(p)
-    return uniq
-
-
-def _primary_cases_dir() -> Path:
-    return _case_dirs()[0]
-
-
-def _slug(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_") or "case"
-
 sys.path.insert(0, str(HERE))
 from fill_forms import (  # noqa: E402
     fill_sc100, fill_fw001, fill_fw003, fill_sc112a, fill_sc150,
     fill_sc107, fill_sc100a_for_party,
+)
+from storage import (  # noqa: E402
+    case_dirs as _case_dirs,
+    primary_cases_dir as _primary_cases_dir,
+    slug as _slug,
+    load_cases,
+    save_case,
+    import_case_json,
 )
 
 _TPL = HERE / "templates"
@@ -106,67 +77,6 @@ def _parse_date(s):
         return _dateutil.parse(s, dayfirst=False).date()
     except Exception:
         return None
-
-
-def load_cases() -> list:
-    """Load every intake record in cases/. Returns [(path, case_dict)]."""
-    by_key = {}
-    for d in _case_dirs():
-        if not d.exists():
-            continue
-        for path in sorted(d.glob("*.json")):
-            if path.name.startswith(("sample", "_")):
-                continue  # templates / examples, not real intakes
-            try:
-                with open(path) as f:
-                    case = json.load(f)
-            except Exception:
-                continue
-            if not isinstance(case, dict) or not (case.get("plaintiff") or {}).get("name"):
-                continue
-            key = (
-                str(case.get("internal_case_number") or "").strip(),
-                str((case.get("plaintiff") or {}).get("name") or "").strip().lower(),
-            )
-            prev = by_key.get(key)
-            if not prev:
-                by_key[key] = (path, case)
-                continue
-            if str(case.get("captured_at") or "") > str((prev[1] or {}).get("captured_at") or ""):
-                by_key[key] = (path, case)
-    return list(by_key.values())
-
-
-def save_case(path: Path, case: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(case, f, indent=2)
-
-
-def import_case_json(raw: bytes, source_name: str = "upload") -> tuple[bool, str]:
-    """Import one case JSON into the primary cases directory."""
-    try:
-        case = json.loads(raw.decode("utf-8"))
-    except Exception as e:
-        return False, f"{source_name}: invalid JSON ({e})"
-
-    if not isinstance(case, dict):
-        return False, f"{source_name}: top-level JSON must be an object"
-
-    name = str((case.get("plaintiff") or {}).get("name") or "").strip()
-    if not name:
-        return False, f"{source_name}: missing plaintiff.name"
-
-    icn = str(case.get("internal_case_number") or "").strip() or f"{datetime.now():%Y%m%d}-IMP"
-    case["internal_case_number"] = icn
-    if not case.get("captured_at"):
-        case["captured_at"] = datetime.now().isoformat(timespec="seconds")
-
-    out = _primary_cases_dir()
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{icn}_{_slug(name)}.json"
-    save_case(path, case)
-    return True, f"Imported {name} -> {path.name}"
 
 
 def generate_packet(case: dict):
