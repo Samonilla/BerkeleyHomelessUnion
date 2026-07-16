@@ -2094,6 +2094,18 @@ with tab_manual:
             "items":             _items_from_editor(),
         }
 
+    st.markdown("**Before Option A:**")
+    _gov_claim_needed = st.radio(
+        "Are you suing the government and required to file a claim under the California Tort Claims Act?",
+        [
+            "Yes — I am suing a city/county/public agency and need to file a government claim.",
+            "No — I am not suing a government entity.",
+        ],
+        key="manual_gov_claim_needed",
+    )
+    if _gov_claim_needed.startswith("No"):
+        st.info("You can skip Option A and Option B and move to Step 3 — Fill and File Lawsuit.")
+
     # ── Option A: your jurisdiction's own claim form (PDF upload) ──────
     st.divider()
     st.markdown("**Option A — Use your jurisdiction's own claim form**")
