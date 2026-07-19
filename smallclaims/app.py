@@ -2115,6 +2115,12 @@ st.caption(
     "lawsuit, to preparing for trial."
 )
 
+st.link_button(
+    "Open AG Complaint Filer (Sam Jones)",
+    "?mode=ag",
+    use_container_width=True,
+)
+
 _mode = st.query_params.get("mode", "") if hasattr(st, "query_params") else ""
 if str(_mode).strip().lower() in {"ag", "ag_complaints", "sam_jones"}:
     _render_ag_complaints_ui()
