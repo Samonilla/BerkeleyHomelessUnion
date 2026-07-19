@@ -384,6 +384,39 @@ def _render_ag_complaint_form(prefix: str, *, default_entity: str = "", default_
         )
 
 
+def _render_ag_complaints_ui() -> None:
+    st.subheader("California AG Complaint Autofiler")
+    st.caption(
+        "Generate a ready-to-review complaint draft for submission to the "
+        "California Attorney General."
+    )
+
+    ag_tab_general, ag_tab_sam_jones = st.tabs([
+        "General AG Complaint",
+        "Sam Jones Complaints",
+    ])
+
+    with ag_tab_general:
+        st.markdown("**General California AG complaint**")
+        _render_ag_complaint_form(
+            "ag_general",
+            default_subject="Complaint regarding shelter or public service conditions",
+        )
+
+    with ag_tab_sam_jones:
+        st.markdown("**Sam Jones Shelter complaint**")
+        st.caption(
+            "This tab is prefilled for Sam Jones Hall so residents and "
+            "advocates can quickly draft AG complaints specific to that shelter."
+        )
+        _render_ag_complaint_form(
+            "ag_sam_jones",
+            default_entity="Sam Jones Hall Homeless Shelter",
+            default_location="Santa Rosa, California",
+            default_subject="Complaint regarding conditions and treatment at Sam Jones Hall Homeless Shelter",
+        )
+
+
 def _build_subpoena_attachments_docx(data: dict) -> bytes:
     """Build a Word document containing only attachment pages for a subpoena."""
     document = Document()
@@ -2082,6 +2115,11 @@ st.caption(
     "lawsuit, to preparing for trial."
 )
 
+_mode = st.query_params.get("mode", "") if hasattr(st, "query_params") else ""
+if str(_mode).strip().lower() in {"ag", "ag_complaints", "sam_jones"}:
+    _render_ag_complaints_ui()
+    st.stop()
+
 
 # ─── Court selector widget (reused in both tabs) ─────────────────────────────
 
@@ -3289,36 +3327,7 @@ with tab_manual:
 # ══════════════════════════════════════════════════════
 
 with tab_ag:
-    st.subheader("California AG Complaint Autofiler")
-    st.caption(
-        "Generate a ready-to-review complaint draft for submission to the "
-        "California Attorney General."
-    )
-
-    ag_tab_general, ag_tab_sam_jones = st.tabs([
-        "General AG Complaint",
-        "Sam Jones Complaints",
-    ])
-
-    with ag_tab_general:
-        st.markdown("**General California AG complaint**")
-        _render_ag_complaint_form(
-            "ag_general",
-            default_subject="Complaint regarding shelter or public service conditions",
-        )
-
-    with ag_tab_sam_jones:
-        st.markdown("**Sam Jones Shelter complaint**")
-        st.caption(
-            "This tab is prefilled for Sam Jones Hall so residents and "
-            "advocates can quickly draft AG complaints specific to that shelter."
-        )
-        _render_ag_complaint_form(
-            "ag_sam_jones",
-            default_entity="Sam Jones Hall Homeless Shelter",
-            default_location="Santa Rosa, California",
-            default_subject="Complaint regarding conditions and treatment at Sam Jones Hall Homeless Shelter",
-        )
+    _render_ag_complaints_ui()
 
 
 # ══════════════════════════════════════════════════════
