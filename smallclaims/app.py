@@ -33,20 +33,43 @@ from fill_forms import (
 )
 from courts import ALL_COUNTIES, courthouses_for_county, court_info_string
 from defendants import ALL_CITIES, defendant_info
-from ag_complaints import render_ag_complaints_ui as _render_ag_complaints_ui_feature
-from documents import (
-    build_guided_declaration as _build_guided_declaration,
-    build_declaration_docx as _build_declaration_docx,
-    build_govt_claim_docx as _build_govt_claim_docx,
-    build_subpoena_attachments_docx as _build_subpoena_attachments_docx,
-    build_exhibit_covers_pdf as _build_exhibit_covers_pdf,
-)
-from spreadsheet_import import (
-    TEMPLATE_COLS as _TEMPLATE_COLS,
-    detect_format as _detect_format,
-    csv_template_bytes as _csv_template_bytes,
-    sc107_csv_template_bytes as _sc107_csv_template_bytes,
-)
+
+try:
+    from ag_complaints import render_ag_complaints_ui as _render_ag_complaints_ui_feature
+except ModuleNotFoundError:
+    from smallclaims.ag_complaints import render_ag_complaints_ui as _render_ag_complaints_ui_feature
+
+try:
+    from documents import (
+        build_guided_declaration as _build_guided_declaration,
+        build_declaration_docx as _build_declaration_docx,
+        build_govt_claim_docx as _build_govt_claim_docx,
+        build_subpoena_attachments_docx as _build_subpoena_attachments_docx,
+        build_exhibit_covers_pdf as _build_exhibit_covers_pdf,
+    )
+except ModuleNotFoundError:
+    from smallclaims.documents import (
+        build_guided_declaration as _build_guided_declaration,
+        build_declaration_docx as _build_declaration_docx,
+        build_govt_claim_docx as _build_govt_claim_docx,
+        build_subpoena_attachments_docx as _build_subpoena_attachments_docx,
+        build_exhibit_covers_pdf as _build_exhibit_covers_pdf,
+    )
+
+try:
+    from spreadsheet_import import (
+        TEMPLATE_COLS as _TEMPLATE_COLS,
+        detect_format as _detect_format,
+        csv_template_bytes as _csv_template_bytes,
+        sc107_csv_template_bytes as _sc107_csv_template_bytes,
+    )
+except ModuleNotFoundError:
+    from smallclaims.spreadsheet_import import (
+        TEMPLATE_COLS as _TEMPLATE_COLS,
+        detect_format as _detect_format,
+        csv_template_bytes as _csv_template_bytes,
+        sc107_csv_template_bytes as _sc107_csv_template_bytes,
+    )
 from storage import (
     case_dirs as _case_dirs,
     primary_cases_dir as _primary_cases_dir,
