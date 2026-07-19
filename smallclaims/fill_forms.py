@@ -10,6 +10,7 @@ Usage:
 """
 
 import json
+import io
 import sys
 import os
 import re
@@ -926,9 +927,11 @@ def fill_sc107(case, template_path, output_path):
     # Render the attachment pages and append them behind the form.
     att_path = output_path + ".attachments.pdf"
     _render_sc107_attachment_pages(case, att_path)
+    main_bytes = Path(output_path).read_bytes()
+    att_bytes = Path(att_path).read_bytes()
     merged = PdfWriter()
-    merged.append(PdfReader(output_path))
-    merged.append(PdfReader(att_path))
+    merged.append(PdfReader(io.BytesIO(main_bytes)))
+    merged.append(PdfReader(io.BytesIO(att_bytes)))
     with open(output_path, "wb") as f:
         merged.write(f)
     try:
