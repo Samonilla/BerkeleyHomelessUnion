@@ -384,17 +384,23 @@ def _render_ag_complaint_form(prefix: str, *, default_entity: str = "", default_
         )
 
 
-def _render_ag_complaints_ui() -> None:
+def _render_ag_complaints_ui(initial_tab: str = "general") -> None:
     st.subheader("California AG Complaint Autofiler")
     st.caption(
         "Generate a ready-to-review complaint draft for submission to the "
         "California Attorney General."
     )
 
-    ag_tab_general, ag_tab_sam_jones = st.tabs([
-        "General AG Complaint",
-        "Sam Jones Complaints",
-    ])
+    if initial_tab == "sam_jones":
+        ag_tab_sam_jones, ag_tab_general = st.tabs([
+            "Sam Jones Complaints",
+            "General AG Complaint",
+        ])
+    else:
+        ag_tab_general, ag_tab_sam_jones = st.tabs([
+            "General AG Complaint",
+            "Sam Jones Complaints",
+        ])
 
     with ag_tab_general:
         st.markdown("**General California AG complaint**")
@@ -2117,13 +2123,14 @@ st.caption(
 
 st.link_button(
     "Open AG Complaint Filer (Sam Jones)",
-    "?mode=ag",
+    "?mode=sam_jones",
     use_container_width=True,
 )
 
 _mode = st.query_params.get("mode", "") if hasattr(st, "query_params") else ""
 if str(_mode).strip().lower() in {"ag", "ag_complaints", "sam_jones"}:
-    _render_ag_complaints_ui()
+    _initial_ag_tab = "sam_jones" if str(_mode).strip().lower() == "sam_jones" else "general"
+    _render_ag_complaints_ui(initial_tab=_initial_ag_tab)
     st.stop()
 
 
@@ -3333,7 +3340,7 @@ with tab_manual:
 # ══════════════════════════════════════════════════════
 
 with tab_ag:
-    _render_ag_complaints_ui()
+    _render_ag_complaints_ui(initial_tab="sam_jones")
 
 
 # ══════════════════════════════════════════════════════
