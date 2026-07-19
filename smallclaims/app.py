@@ -39,11 +39,17 @@ from storage import (
     case_dirs as _case_dirs,
     primary_cases_dir as _primary_cases_dir,
     slug as _slug,
-    normalize_org as _normalize_org,
     capture_case_record as _capture_case_record,
     load_cases as _load_case_files,
     save_case as _save_case,
 )
+
+try:
+    from storage import normalize_org as _normalize_org
+except Exception:
+    def _normalize_org(org: str | None) -> str:
+        token = re.sub(r"[^a-z0-9]+", "_", str(org or "").strip().lower()).strip("_")
+        return token or "berkeley"
 
 _META_SC100 = str(HERE / "field_meta" / "sc100_fields.json")
 _META_FW001 = str(HERE / "field_meta" / "fw001_fields.json")
