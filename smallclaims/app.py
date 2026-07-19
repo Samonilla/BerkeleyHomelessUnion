@@ -13,7 +13,6 @@ import re
 import hmac
 import sys
 import tempfile
-import textwrap
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,7 +20,6 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from dateutil import parser as _dateutil
-from docx import Document
 from extra_streamlit_components import CookieManager
 
 HERE = Path(__file__).parent
@@ -36,6 +34,19 @@ from fill_forms import (
 from courts import ALL_COUNTIES, courthouses_for_county, court_info_string
 from defendants import ALL_CITIES, defendant_info
 from ag_complaints import render_ag_complaints_ui as _render_ag_complaints_ui_feature
+from documents import (
+    build_guided_declaration as _build_guided_declaration,
+    build_declaration_docx as _build_declaration_docx,
+    build_govt_claim_docx as _build_govt_claim_docx,
+    build_subpoena_attachments_docx as _build_subpoena_attachments_docx,
+    build_exhibit_covers_pdf as _build_exhibit_covers_pdf,
+)
+from spreadsheet_import import (
+    TEMPLATE_COLS as _TEMPLATE_COLS,
+    detect_format as _detect_format,
+    csv_template_bytes as _csv_template_bytes,
+    sc107_csv_template_bytes as _sc107_csv_template_bytes,
+)
 from storage import (
     case_dirs as _case_dirs,
     primary_cases_dir as _primary_cases_dir,
@@ -113,223 +124,8 @@ def _cleanup_manual_claim_reason() -> None:
         st.session_state["manual_claim_reason_notice"] = "empty"
 
 
-def _build_guided_declaration(text: str, answers: dict) -> str:
-    intro = [
-        "I am the plaintiff in this action.",
-        "I am submitting this declaration under penalty of perjury and state that the following is true and correct.",
-    ]
-    facts = []
-
-    if answers.get("incident_date"):
-        facts.append(f"On {answers['incident_date']}, the events described below occurred.")
-
-    for key, value in answers.items():
-        if key in {"incident_date", "items", "claim_amount"}:
-            continue
-        cleaned = _normalize_plain_language(value)
-        if cleaned:
-            facts.append(cleaned)
-
-    items = answers.get("items") or []
-    if items:
-        item_lines = []
-        for item in items:
-            description = str(item.get("description") or "").strip()
-            value = str(item.get("value") or "").strip()
-            condition = str(item.get("condition") or "").strip() or "Unknown"
-            if description and value:
-                item_lines.append(
-                    f"I lost {description}, which was valued at ${value}, and it was in {condition.lower()} condition when it was destroyed."
-                )
-            elif description:
-                item_lines.append(
-                    f"I lost {description}, and it was in {condition.lower()} condition when it was destroyed."
-                )
-        if item_lines:
-            facts.append(" ".join(item_lines))
-
-    if text.strip():
-        facts.append(_normalize_plain_language(text))
-
-    if answers.get("claim_amount"):
-        facts.append(f"The total value of the property I lost is approximately ${answers['claim_amount']}.")
-
-    paragraphs = intro + [f"{i}. {fact}" for i, fact in enumerate(facts, start=1)]
-    paragraphs.append("I declare under penalty of perjury that the foregoing is true and correct.")
-    return "\n\n".join(paragraphs)
-
-
-def _build_declaration_docx(text: str) -> bytes:
-    document = Document()
-    document.add_heading("Declaration", level=1)
-    for paragraph_text in text.split("\n\n"):
-        if paragraph_text.strip():
-            document.add_paragraph(paragraph_text)
-
-    buf = io.BytesIO()
-    document.save(buf)
-    return buf.getvalue()
-
-
-def _build_govt_claim_docx(data: dict) -> bytes:
-    """Build a Gov. Code §§ 905/910 claim-for-damages form as a Word document."""
-    entity = (data.get("entity") or "").strip()
-    document = Document()
-    document.add_heading("CLAIM FOR DAMAGES AGAINST A PUBLIC ENTITY", level=1)
-    to_text = f"To: Office of the City Clerk{', ' + entity if entity else ''}"
-    if data.get("clerk_address"):
-        to_text += f"\n{data['clerk_address']}"
-    document.add_paragraph(to_text)
-    document.add_paragraph(
-        "This claim is presented pursuant to California Government Code "
-        "sections 905, 910, and 910.2."
-    )
-
-    def _row(label, value):
-        p = document.add_paragraph()
-        p.add_run(f"{label}: ").bold = True
-        p.add_run(value if value else "____________________________________________")
-
-    _row("1. Claimant name", data.get("claimant_name"))
-    _row("2. Mailing address (send all notices here)", data.get("claimant_address"))
-    _row("3. Phone", data.get("claimant_phone"))
-    _row("4. Date of occurrence", data.get("incident_date"))
-    _row("5. Place of occurrence", data.get("incident_location"))
-    _row("6. Circumstances of the occurrence", data.get("description"))
-    _row("7. General description of the injury, damage, or loss", data.get("description"))
-    _row("8. Names of public employees or agencies causing the loss, if known",
-         data.get("employees"))
-
-    items = data.get("items") or []
-    if items:
-        p = document.add_paragraph()
-        p.add_run("Itemized property destroyed or taken: ").bold = True
-        for item in items:
-            desc = str(item.get("description") or "").strip()
-            val = str(item.get("value") or "").replace("$", "").strip()
-            cond = str(item.get("condition") or "").strip()
-            line = f"– {desc}"
-            if cond:
-                line += f" (condition: {cond})"
-            if val:
-                line += f" — ${val}"
-            document.add_paragraph(line)
-
-    amount_raw = (data.get("amount") or "").replace("$", "").replace(",", "").strip()
-    try:
-        amount_val = float(amount_raw)
-    except ValueError:
-        amount_val = None
-    if amount_val is not None and amount_val > 10000:
-        _row(
-            "9. Amount claimed",
-            "The amount claimed exceeds $10,000 and this would be a limited "
-            "civil case. (Gov. Code § 910(f).)",
-        )
-    else:
-        _row(
-            "9. Amount claimed as of presentation, with basis of computation",
-            (f"${amount_raw} — the value of the claimant's personal property "
-             "destroyed or taken, as described above.") if amount_raw else "",
-        )
-
-    document.add_paragraph("")
-    document.add_paragraph(
-        "I declare under penalty of perjury under the laws of the State of "
-        "California that the foregoing is true and correct."
-    )
-    document.add_paragraph("Dated: ____________________")
-    document.add_paragraph(
-        f"Signature: ____________________    {data.get('claimant_name') or ''}"
-    )
-
-    buf = io.BytesIO()
-    document.save(buf)
-    return buf.getvalue()
-
-
 def _render_ag_complaints_ui(initial_tab: str = "general") -> None:
     _render_ag_complaints_ui_feature(initial_tab=initial_tab, slug_fn=_slug)
-
-
-def _build_subpoena_attachments_docx(data: dict) -> bytes:
-    """Build a Word document containing only attachment pages for a subpoena."""
-    document = Document()
-    document.add_heading("Attachment to Small Claims Subpoena", level=1)
-
-    case_caption = (data.get("case_caption") or "").strip()
-    if case_caption:
-        document.add_paragraph(f"Case caption: {case_caption}")
-
-    document.add_paragraph(
-        "Attach these pages behind the subpoena as the list of documents and "
-        "records requested."
-    )
-
-    recipient = (data.get("to") or "").strip()
-    custodian = (data.get("custodian") or "").strip()
-    service_location = (data.get("service_location") or "").strip()
-
-    if recipient or custodian or service_location:
-        document.add_heading("Records Requested From", level=2)
-        if recipient:
-            document.add_paragraph(f"Person or agency: {recipient}")
-        if custodian:
-            document.add_paragraph(f"Custodian of records: {custodian}")
-        if service_location:
-            document.add_paragraph(f"Service address: {service_location}")
-
-    requests = [
-        str(request).strip() for request in (data.get("requests") or []) if str(request).strip()
-    ]
-    document.add_heading("Requested Documents and Things", level=2)
-    if requests:
-        for index, request in enumerate(requests, start=1):
-            document.add_paragraph(f"{index}. {request}")
-    else:
-        document.add_paragraph("No specific requests were listed.")
-
-    buf = io.BytesIO()
-    document.save(buf)
-    return buf.getvalue()
-
-
-def _build_exhibit_covers_pdf(exhibits: list[dict], case: dict) -> bytes:
-    """Build exhibit face pages: one page per exhibit with label + description."""
-    from reportlab.lib.pagesizes import letter
-    from reportlab.pdfgen import canvas
-
-    buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=letter)
-    width, height = letter
-
-    case_name = f"{(case.get('plaintiff') or {}).get('name', 'Plaintiff')} v. {(case.get('defendant') or {}).get('name', 'Defendant')}"
-
-    for idx, ex in enumerate(exhibits):
-        label = f"Exhibit {chr(65 + idx)}"
-        description = str(ex.get("description") or "").strip() or "(No description provided)"
-
-        c.setFont("Helvetica-Bold", 24)
-        c.drawCentredString(width / 2, height - 120, label.upper())
-
-        c.setFont("Helvetica", 12)
-        c.drawString(72, height - 165, f"Case: {case_name}")
-        c.drawString(72, height - 185, f"Description: {description[:180]}")
-
-        c.setFont("Helvetica", 11)
-        y = height - 230
-        for line in textwrap.wrap(description, width=95):
-            c.drawString(72, y, line)
-            y -= 16
-            if y < 100:
-                break
-
-        c.setFont("Helvetica-Oblique", 10)
-        c.drawString(72, 72, "This is an exhibit face page automatically generated by the intake app.")
-        c.showPage()
-
-    c.save()
-    return buf.getvalue()
 
 
 # ─── Local jurisdiction claim form (uploaded PDF) auto-fill ──────────────────
@@ -677,21 +473,6 @@ def _parse_date(raw) -> str:
         return s
 
 
-# ─── Spreadsheet format detection ────────────────────────────────────────────
-
-_INTAKE_COLS = {"Name", "Address", "Phone Number", "Location of Injury", "Date of Injury"}
-_TEMPLATE_COL = "plaintiff_name"
-
-
-def _detect_format(df: pd.DataFrame) -> str:
-    cols = set(df.columns)
-    if _INTAKE_COLS.issubset(cols):
-        return "oakland_intake"
-    if _TEMPLATE_COL in cols:
-        return "template"
-    return "unknown"
-
-
 # ─── Oakland intake → case dict ───────────────────────────────────────────────
 
 _CLAIM_REASON_TMPL = (
@@ -877,92 +658,6 @@ def template_row_to_case(row: pd.Series) -> dict:
     }
 
 
-# ─── CSV template for download ────────────────────────────────────────────────
-
-_TEMPLATE_COLS = [
-    ("plaintiff_name",          "Full legal name",                                True,  "Jane Doe"),
-    ("plaintiff_street",        "Street / PO Box (c/o ... for unhoused)",         True,  "c/o 1234 Telegraph Ave"),
-    ("incident_date",           "Date of sweep MM/DD/YYYY",                       True,  "05/12/2025"),
-    ("claim_amount",            "Total claim dollars (max 12500)",                True,  "10000"),
-    ("claim_reason",            "What happened — used on SC-100 and SC-150",      True,  "On May 12 2025 City of Oakland DPW..."),
-    ("govt_claim_filed_date",   "Date govt tort claim filed with City Clerk",     True,  "08/15/2025"),
-    ("filing_date",             "Date filing court papers MM/DD/YYYY",            True,  "09/15/2025"),
-    ("total_monthly_income",    "Total monthly income $",                          True,  "400"),
-    ("total_monthly_expenses",  "Total monthly expenses $",                        True,  "300"),
-    ("plaintiff_city",          "Plaintiff's city",                               False, "Oakland"),
-    ("plaintiff_state",         "State (default CA)",                             False, "CA"),
-    ("plaintiff_zip",           "ZIP code",                                       False, "94609"),
-    ("plaintiff_phone",         "Phone number",                                   False, "510-555-0100"),
-    ("plaintiff_email",         "Email",                                          False, ""),
-    ("damages_calculation",     "How damages were calculated (SC-100)",         False, "Clothing $500..."),
-    ("income_source_1",         "Primary income source",                          False, "General Assistance"),
-    ("income_amount_1",         "Primary income amount $",                         False, "400"),
-    ("expense_food",            "Monthly food/supplies $",                         False, "200"),
-    ("expense_medical",         "Monthly medical $",                               False, "50"),
-    ("expense_transport",       "Monthly transport $",                             False, "50"),
-    ("expense_housing",         "Monthly housing $",                               False, "0"),
-    ("receives_medi_cal",       "Receives Medi-Cal? TRUE/FALSE",                  False, "TRUE"),
-    ("fee_waiver_basis",        "Fee waiver basis: 5a 5b or 5c",                  False, "5c"),
-    ("declaration_content",     "First-person declaration (optional)",            False, ""),
-
-    # SC-107 subpoena helper fields
-    ("subpoena_case_caption",   "SC-107 subpoena case caption",                   False, "Jane Doe v. City of Oakland"),
-    ("subpoena_to",             "Subpoena recipient / agency",                    False, "Oakland Police Department"),
-    ("subpoena_custodian",      "Custodian of records",                            False, "Records Division"),
-    ("subpoena_service_location","Service address for subpoena",                   False, "1515 Clay St, Oakland CA"),
-    ("subpoena_request_1",      "SC-107 request item 1",                          False, "All body-worn camera and officer dashboard footage from the sweep."),
-    ("subpoena_request_2",      "SC-107 request item 2",                          False, "All police incident reports, notes, and supplemental reports related to the sweep."),
-    ("subpoena_request_3",      "SC-107 request item 3",                          False, "All dispatch logs, radio transmissions, and 911/311 call recordings for the incident."),
-    ("subpoena_request_4",      "SC-107 request item 4",                          False, "All complaints, investigations, and disciplinary records for involved officers."),
-    ("subpoena_request_5",      "SC-107 request item 5",                          False, "All internal communications, emails, memos, and directives regarding encampment sweeps."),
-    ("subpoena_request_6",      "SC-107 request item 6",                          False, "All policies, training materials, use-of-force guidelines, and homeless encampment protocols."),
-    ("subpoena_request_7",      "SC-107 request item 7",                          False, "All property seizure, storage, chain-of-custody, and disposal records."),
-    ("subpoena_request_8",      "SC-107 request item 8",                          False, "All surveillance camera and private video footage from the sweep location."),
-    ("subpoena_request_9",      "SC-107 request item 9",                          False, "All records of coordination between police, DPW, and other City agencies."),
-    ("subpoena_request_10",     "SC-107 request item 10",                         False, "All logs, schedules, and written directives authorizing the sweeps."),
-    ("subpoena_good_cause",     "Attachment 3: why good cause exists (blank = default)",   False, ""),
-    ("subpoena_materiality",    "Attachment 4: why records are material (blank = default)", False, ""),
-    ("item_1_desc",             "Property item 1 description",                    False, "Tent and sleeping bag"),
-    ("item_1_value",            "Property item 1 value $",                         False, "350"),
-    ("item_2_desc",             "Property item 2 description",                    False, "Clothing"),
-    ("item_2_value",            "Property item 2 value $",                         False, "500"),
-]
-
-
-def _csv_template_bytes() -> bytes:
-    row = {c[0]: c[3] for c in _TEMPLATE_COLS}
-    buf = io.StringIO()
-    pd.DataFrame([row]).to_csv(buf, index=False)
-    return buf.getvalue().encode()
-
-
-_SC107_TEMPLATE_COLS = [
-    ("subpoena_case_caption",    "SC-107 subpoena case caption",                   False, "Jane Doe v. City of Oakland"),
-    ("subpoena_to",              "Subpoena recipient / agency",                    False, "Oakland Police Department"),
-    ("subpoena_custodian",       "Custodian of records",                            False, "Records Division"),
-    ("subpoena_service_location","Service address for subpoena",                   False, "1515 Clay St, Oakland CA"),
-    ("subpoena_request_1",       "SC-107 request item 1",                          False, "All body-worn camera and officer dashboard footage from the sweep."),
-    ("subpoena_request_2",       "SC-107 request item 2",                          False, "All police incident reports, notes, and supplemental reports related to the sweep."),
-    ("subpoena_request_3",       "SC-107 request item 3",                          False, "All dispatch logs, radio transmissions, and 911/311 call recordings for the incident."),
-    ("subpoena_request_4",       "SC-107 request item 4",                          False, "All complaints, investigations, and disciplinary records for involved officers."),
-    ("subpoena_request_5",       "SC-107 request item 5",                          False, "All internal communications, emails, memos, and directives regarding encampment sweeps."),
-    ("subpoena_request_6",       "SC-107 request item 6",                          False, "All policies, training materials, use-of-force guidelines, and homeless encampment protocols."),
-    ("subpoena_request_7",       "SC-107 request item 7",                          False, "All property seizure, storage, chain-of-custody, and disposal records."),
-    ("subpoena_request_8",       "SC-107 request item 8",                          False, "All surveillance camera and private video footage from the sweep location."),
-    ("subpoena_request_9",       "SC-107 request item 9",                          False, "All records of coordination between police, DPW, and other City agencies."),
-    ("subpoena_request_10",      "SC-107 request item 10",                         False, "All logs, schedules, and written directives authorizing the sweeps."),
-    ("subpoena_good_cause",      "Attachment 3: why good cause exists (blank = default)",   False, ""),
-    ("subpoena_materiality",     "Attachment 4: why records are material (blank = default)", False, ""),
-]
-
-
-def _sc107_csv_template_bytes() -> bytes:
-    row = {c[0]: c[3] for c in _SC107_TEMPLATE_COLS}
-    buf = io.StringIO()
-    pd.DataFrame([row]).to_csv(buf, index=False)
-    return buf.getvalue().encode()
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1015,8 +710,16 @@ def _org_label(org: str) -> str:
     return labels.get(org, org.replace("_", " ").title())
 
 
+def _requested_mode() -> str:
+    try:
+        return str(st.query_params.get("mode", "")).strip().lower()
+    except Exception:
+        return ""
+
+
 _ACTIVE_ORG = _active_org()
 _ACTIVE_ORG_LABEL = _org_label(_ACTIVE_ORG)
+_REQUESTED_MODE = _requested_mode()
 
 
 def _admin_url() -> str:
@@ -1853,7 +1556,18 @@ if st.session_state.get("bhu_admin_user") and _dashboard_requested():
     st.session_state["bhu_view_mode"] = "dashboard"
 _title_l, _title_r = st.columns([5, 1])
 with _title_l:
-    st.title("California Encampment — Small Claims Autofiller")
+    _is_ag_mode = _REQUESTED_MODE in {"ag", "ag_complaints", "sam_jones"}
+    _page_title = (
+        "Attorney General Complaint Filing Assisstant"
+        if _is_ag_mode
+        else "California Encampment — Small Claims Autofiller"
+    )
+    st.title(_page_title)
+    if _is_ag_mode:
+        st.markdown(
+            "<script>document.title='Attorney General Complaint Filing Assisstant';</script>",
+            unsafe_allow_html=True,
+        )
     st.caption(f"Organization: **{_ACTIVE_ORG_LABEL}**")
 with _title_r:
     _signed_in = st.session_state.get("bhu_admin_user")
@@ -1956,7 +1670,7 @@ st.link_button(
     use_container_width=True,
 )
 
-_mode = st.query_params.get("mode", "") if hasattr(st, "query_params") else ""
+_mode = _REQUESTED_MODE
 if str(_mode).strip().lower() in {"ag", "ag_complaints", "sam_jones"}:
     _initial_ag_tab = "sam_jones" if str(_mode).strip().lower() == "sam_jones" else "general"
     _render_ag_complaints_ui(initial_tab=_initial_ag_tab)
