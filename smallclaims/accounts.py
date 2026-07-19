@@ -19,6 +19,16 @@ USERS_FILE = HERE / "admin_users.json"
 _PBKDF2_ITERATIONS = 200_000
 
 
+def normalize_org(org: str | None) -> str:
+    token = re.sub(r"[^a-z0-9]+", "_", str(org or "").strip().lower()).strip("_")
+    return token or "berkeley"
+
+
+def user_org(users: dict, username: str) -> str:
+    u = users.get((username or "").strip().lower()) or {}
+    return normalize_org(u.get("org"))
+
+
 def hash_password(password: str, salt_hex: str | None = None):
     salt_hex = salt_hex or secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac(
@@ -40,7 +50,7 @@ def save_users(users: dict) -> None:
         json.dump(users, f, indent=2)
 
 
-def add_user(users: dict, username: str, password: str) -> str:
+def add_user(users: dict, username: str, password: str, org: str | None = None) -> str:
     """Add an account. Returns '' on success or an error message."""
     username = username.strip().lower()
     if not re.fullmatch(r"[a-z0-9_.-]{2,30}", username):
@@ -50,9 +60,11 @@ def add_user(users: dict, username: str, password: str) -> str:
     if len(password) < 8:
         return "Password must be at least 8 characters."
     salt, digest = hash_password(password)
+    normalized_org = normalize_org(org)
     users[username] = {
         "salt": salt,
         "hash": digest,
+        "org": normalized_org,
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     save_users(users)

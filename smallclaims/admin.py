@@ -40,6 +40,7 @@ from storage import (  # noqa: E402
     case_dirs as _case_dirs,
     primary_cases_dir as _primary_cases_dir,
     slug as _slug,
+    normalize_org as _normalize_org,
     load_cases,
     save_case,
     import_case_json,
@@ -208,8 +209,30 @@ from accounts import (  # noqa: E402
     hash_password as _hash_password,
     load_users as _load_users,
     save_users as _save_users,
+    user_org as _user_org,
     verify_login as _verify_login,
 )
+
+
+def _active_org() -> str:
+    try:
+        qp_org = st.query_params.get("org")
+    except Exception:
+        qp_org = ""
+    env_org = os.environ.get("BHU_ORG", "")
+    return _normalize_org(qp_org or env_org or "berkeley")
+
+
+def _org_label(org: str) -> str:
+    labels = {
+        "berkeley": "Berkeley Homeless Union",
+        "santa_rosa": "Santa Rosa Homeless Union",
+    }
+    return labels.get(org, org.replace("_", " ").title())
+
+
+_ACTIVE_ORG = _active_org()
+_ACTIVE_ORG_LABEL = _org_label(_ACTIVE_ORG)
 
 
 # ─── Page & access gate ───────────────────────────────────────────────────────
@@ -217,12 +240,13 @@ from accounts import (  # noqa: E402
 st.set_page_config(page_title="BHU — Officer Case Tracker", page_icon="📋", layout="wide")
 
 _users = _load_users()
+_org_users = [u for u in sorted(_users) if _user_org(_users, u) == _ACTIVE_ORG]
 
-if not _users:
+if not _org_users:
     # First run: create the admin account before anything is shown.
-    st.title("📋 BHU Officer Case Tracker — First-Time Setup")
+    st.title(f"📋 {_ACTIVE_ORG_LABEL} — Officer Case Tracker Setup")
     st.caption(
-        "No officer accounts exist yet. Create the admin account to lock "
+        "No officer accounts exist yet for this union. Create the admin account to lock "
         "this tracker. You can add more officer accounts later from the "
         "sidebar."
     )
@@ -234,7 +258,7 @@ if not _users:
             if np1 != np2:
                 st.error("Passwords don't match.")
             else:
-                err = _add_user(_users, nu, np1)
+                err = _add_user(_users, nu, np1, org=_ACTIVE_ORG)
                 if err:
                     st.error(err)
                 else:
@@ -243,37 +267,39 @@ if not _users:
     st.stop()
 
 if not st.session_state.get("bhu_user"):
-    st.title("📋 BHU Officer Case Tracker")
+    st.title(f"📋 {_ACTIVE_ORG_LABEL} — Officer Case Tracker")
     with st.form("bhu_login"):
         lu = st.text_input("Username")
         lp = st.text_input("Password", type="password")
         if st.form_submit_button("Sign in", type="primary"):
-            if _verify_login(_users, lu, lp):
+            if _verify_login(_users, lu, lp) and _user_org(_users, lu) == _ACTIVE_ORG:
                 st.session_state["bhu_user"] = lu.strip().lower()
                 st.rerun()
             else:
-                st.error("Wrong username or password.")
+                st.error("Wrong username/password, or account belongs to another union.")
     st.stop()
 
 # ─── Sidebar: session + account management ────────────────────────────────────
 
 with st.sidebar:
+    st.markdown(f"Union: **{_ACTIVE_ORG_LABEL}**")
     st.markdown(f"Signed in as **{st.session_state['bhu_user']}**")
     if st.button("Sign out", use_container_width=True):
         st.session_state.pop("bhu_user", None)
         st.rerun()
 
     with st.expander("Manage officer accounts"):
-        st.caption(f"{len(_users)} account(s): " + ", ".join(sorted(_users)))
+        org_accounts = [u for u in sorted(_users) if _user_org(_users, u) == _ACTIVE_ORG]
+        st.caption(f"{len(org_accounts)} account(s) for this union: " + ", ".join(org_accounts))
         with st.form("bhu_add_officer", clear_on_submit=True):
             au = st.text_input("New officer username")
             ap = st.text_input("Password (min 8 characters)", type="password")
             if st.form_submit_button("Add account"):
-                err = _add_user(_users, au, ap)
+                err = _add_user(_users, au, ap, org=_ACTIVE_ORG)
                 st.error(err) if err else st.success(f"Added {au.strip().lower()}.")
         rm = st.selectbox(
             "Remove an account",
-            [""] + [u for u in sorted(_users) if u != st.session_state["bhu_user"]],
+            [""] + [u for u in org_accounts if u != st.session_state["bhu_user"]],
         )
         if rm and st.button(f"Remove {rm}", use_container_width=True):
             _users.pop(rm, None)
@@ -311,7 +337,7 @@ with st.sidebar:
         if files and st.button("Import uploaded files", use_container_width=True):
             ok_count, err_count = 0, 0
             for f in files:
-                ok, msg = import_case_json(f.getvalue(), f.name)
+                ok, msg = import_case_json(f.getvalue(), f.name, org=_ACTIVE_ORG)
                 if ok:
                     ok_count += 1
                     st.success(msg)
@@ -322,7 +348,7 @@ with st.sidebar:
             if ok_count:
                 st.rerun()
 
-st.title("📋 Berkeley Homeless Union — Officer Case Tracker")
+st.title(f"📋 {_ACTIVE_ORG_LABEL} — Officer Case Tracker")
 st.caption(
     "Every intake captured by the public site appears here under its internal "
     "case number (YYYYMMDD-initials). Update statuses, keep notes, watch "
@@ -330,9 +356,9 @@ st.caption(
     "sensitive personal information — handle accordingly."
 )
 
-records = load_cases()
+records = load_cases(org=_ACTIVE_ORG)
 if not records:
-    st.info("No cases captured yet. Records appear here automatically once "
+    st.info("No cases captured yet for this union. Records appear here automatically once "
             "someone generates forms on the intake site.")
     st.stop()
 

@@ -39,6 +39,7 @@ from storage import (
     case_dirs as _case_dirs,
     primary_cases_dir as _primary_cases_dir,
     slug as _slug,
+    normalize_org as _normalize_org,
     capture_case_record as _capture_case_record,
     load_cases as _load_case_files,
     save_case as _save_case,
@@ -977,12 +978,34 @@ st.markdown(
 
 from accounts import (
     add_user as _acct_add, load_users as _acct_load, verify_login as _acct_verify,
+    user_org as _acct_org,
 )
 
 
 _MEDIA_TRACKER_URL = os.environ.get(
     "BHU_MEDIA_TRACKER_URL", "https://bhu-media-tracker.vercel.app"
 )
+
+
+def _active_org() -> str:
+    try:
+        qp_org = st.query_params.get("org")
+    except Exception:
+        qp_org = ""
+    env_org = os.environ.get("BHU_ORG", "")
+    return _normalize_org(qp_org or env_org or "berkeley")
+
+
+def _org_label(org: str) -> str:
+    labels = {
+        "berkeley": "Berkeley Homeless Union",
+        "santa_rosa": "Santa Rosa Homeless Union",
+    }
+    return labels.get(org, org.replace("_", " ").title())
+
+
+_ACTIVE_ORG = _active_org()
+_ACTIVE_ORG_LABEL = _org_label(_ACTIVE_ORG)
 
 
 def _admin_url() -> str:
@@ -992,11 +1015,13 @@ def _admin_url() -> str:
             return str(st.secrets["admin_url"])
     except Exception:
         pass
-    return os.environ.get("BHU_ADMIN_URL", "http://localhost:8502")
+    base = os.environ.get("BHU_ADMIN_URL", "http://localhost:8502")
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}org={_ACTIVE_ORG}"
 
 
 def _load_case_records() -> list:
-    return [case for _, case in _load_case_files()]
+    return [case for _, case in _load_case_files(org=_ACTIVE_ORG)]
 
 
 _CUSTOM_DEFENDANT = "✏️ No prefill — enter any defendant (person, county, unincorporated area…)"
@@ -1181,6 +1206,7 @@ def _manual_case_id(case: dict) -> str:
 
 def _save_manual_case(case: dict) -> None:
     case_id = _manual_case_id(case)
+    case["organization"] = _ACTIVE_ORG
     case["captured_at"] = case.get("captured_at") or st.session_state.get(
         "manual_captured_at"
     ) or datetime.now().isoformat(timespec="seconds")
@@ -1276,7 +1302,8 @@ def _restore_admin_session_from_cookie() -> None:
     if not cookie_value:
         return
     username = _verify_admin_cookie(cookie_value)
-    if username:
+    users = _acct_load()
+    if username and _acct_org(users, username) == _ACTIVE_ORG:
         st.session_state["bhu_admin_user"] = username
 
 
@@ -1816,6 +1843,7 @@ if st.session_state.get("bhu_admin_user") and _dashboard_requested():
 _title_l, _title_r = st.columns([5, 1])
 with _title_l:
     st.title("California Encampment — Small Claims Autofiller")
+    st.caption(f"Organization: **{_ACTIVE_ORG_LABEL}**")
 with _title_r:
     _signed_in = st.session_state.get("bhu_admin_user")
     if _signed_in:
@@ -1836,8 +1864,9 @@ with _title_r:
     else:
         with _pop("🔐 Sign In", use_container_width=True):
             _users = _acct_load()
-            if not _users:
-                st.caption("No officer accounts yet — create the admin account:")
+            _org_users = [u for u in sorted(_users) if _acct_org(_users, u) == _ACTIVE_ORG]
+            if not _org_users:
+                st.caption("No officer accounts yet for this union — create the admin account:")
                 nu = st.text_input("Admin username", key="portal_new_user")
                 np1 = st.text_input("Password (min 8 chars)", type="password", key="portal_new_pw1")
                 np2 = st.text_input("Confirm password", type="password", key="portal_new_pw2")
@@ -1845,7 +1874,7 @@ with _title_r:
                     if np1 != np2:
                         st.error("Passwords don't match.")
                     else:
-                        err = _acct_add(_users, nu, np1)
+                        err = _acct_add(_users, nu, np1, org=_ACTIVE_ORG)
                         if err:
                             st.error(err)
                         else:
@@ -1856,12 +1885,12 @@ with _title_r:
                 lu = st.text_input("Username", key="portal_login_user")
                 lp = st.text_input("Password", type="password", key="portal_login_pw")
                 if st.button("Sign in", key="portal_login", use_container_width=True):
-                    if _acct_verify(_users, lu, lp):
+                    if _acct_verify(_users, lu, lp) and _acct_org(_users, lu) == _ACTIVE_ORG:
                         st.session_state["bhu_admin_user"] = lu.strip().lower()
                         _remember_admin_session(lu)
                         st.rerun()
                     else:
-                        st.error("Wrong username or password.")
+                        st.error("Wrong username/password, or account is for a different union.")
 
 if st.session_state.get("bhu_admin_user") and st.session_state.get("bhu_view_mode") == "dashboard":
     _render_admin_portal(st.session_state["bhu_admin_user"])
@@ -3314,7 +3343,7 @@ with tab_sheet:
                 try:
                     case = intake_row_to_case(row, defaults)
                     try:
-                        _capture_case_record(case)
+                        _capture_case_record(case, org=_ACTIVE_ORG)
                     except Exception:
                         pass  # capture failure shouldn't block form generation
                     pdfs = _generate_pdfs(case)
@@ -3366,7 +3395,7 @@ with tab_sheet:
                 try:
                     case = template_row_to_case(row)
                     try:
-                        _capture_case_record(case)
+                        _capture_case_record(case, org=_ACTIVE_ORG)
                     except Exception:
                         pass  # capture failure shouldn't block form generation
                     pdfs = _generate_pdfs(case)
