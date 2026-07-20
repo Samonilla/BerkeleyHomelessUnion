@@ -1118,10 +1118,46 @@ def _find_resume_case(identifier: str) -> dict | None:
     token = str(identifier or "").strip()
     if not token:
         return None
-    for case in _load_case_records():
-        if _case_matches_query(case, token):
+    records = _load_case_records()
+    token_lower = token.lower()
+    token_slug = _slug(token)
+
+    def _norm(value) -> str:
+        return str(value or "").strip()
+
+    def _same(a: str, b: str) -> bool:
+        return a.strip().lower() == b.strip().lower() if a and b else False
+
+    # 1) Exact identifier matches first (internal case id or court case number).
+    for case in records:
+        internal = _norm(case.get("internal_case_number"))
+        case_number = _norm(case.get("case_number"))
+        if _same(internal, token) or _same(case_number, token):
             return case
-    return None
+
+    # 2) Fuzzy matches ranked by most-recent capture/update time.
+    candidates = [case for case in records if _case_matches_query(case, token)]
+    if not candidates and token_slug:
+        candidates = [
+            case for case in records
+            if token_slug in _slug(_case_search_blob(case))
+        ]
+    if not candidates:
+        return None
+
+    def _last_touch(case: dict) -> float:
+        tracking = case.get("tracking") or {}
+        for raw in (tracking.get("updated_at"), case.get("captured_at")):
+            if not raw:
+                continue
+            try:
+                return _dateutil.parse(str(raw)).timestamp()
+            except Exception:
+                continue
+        return 0.0
+
+    candidates.sort(key=_last_touch, reverse=True)
+    return candidates[0]
 
 
 def _portal_date(s):
