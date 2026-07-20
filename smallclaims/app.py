@@ -456,6 +456,9 @@ def _make_zip(pdfs: dict, slug: str, flatten: bool = False) -> bytes:
 def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
     prefix = f"{label} — " if label else ""
     st.success(f"{prefix}Generated {len(pdfs)} forms.")
+    signature_png = _signature_png_bytes()
+    if not signature_png:
+        st.warning("Draw your signature above before signing individual PDFs.")
     zip_bytes = _make_zip(pdfs, slug, flatten=False)
     st.download_button(
         "⬇️  Download All Forms (ZIP)",
@@ -483,13 +486,42 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
             width="stretch",
             key=f"zip_flat_{slug}",
         )
-    cols = st.columns(len(pdfs))
-    for col, (lbl, data) in zip(cols, pdfs.items()):
+    for lbl, data in pdfs.items():
         fname = f"{slug}_{lbl.lower().replace('-', '')}.pdf"
-        with col:
+        signed_key = f"signed_{slug}_{lbl}"
+        with st.expander(lbl, expanded=False):
+            current_bytes = st.session_state.get(signed_key, data)
+            st.caption("Review this PDF, then click the sign button to stamp your browser signature onto it.")
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                if st.button(
+                    f"Sign {lbl}",
+                    key=f"sign_{slug}_{lbl}",
+                    use_container_width=True,
+                    disabled=not signature_png,
+                ):
+                    try:
+                        st.session_state[signed_key] = _stamp_signature_on_pdf(data, signature_png)
+                        current_bytes = st.session_state[signed_key]
+                        st.success(f"Signed {lbl}.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Could not sign {lbl}: {exc}")
+            with c2:
+                if st.button(
+                    f"Clear signature for {lbl}",
+                    key=f"clear_{slug}_{lbl}",
+                    use_container_width=True,
+                    disabled=signed_key not in st.session_state,
+                ):
+                    st.session_state.pop(signed_key, None)
+                    st.rerun()
             st.download_button(
-                lbl, data=data, file_name=fname,
-                mime="application/pdf", width="stretch",
+                f"⬇️ Download {lbl}",
+                data=current_bytes,
+                file_name=fname,
+                mime="application/pdf",
+                width="stretch",
                 key=f"pdf_{slug}_{lbl}",
             )
 
@@ -552,19 +584,7 @@ def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes) -> bytes:
 
 
 def _apply_browser_signature(pdfs: dict) -> dict:
-    signature_png = _signature_png_bytes()
-    if not signature_png:
-        return pdfs
-    signed = {}
-    for label, data in pdfs.items():
-        if label in {"SC-100", "FW-001", "SC-150"}:
-            try:
-                signed[label] = _stamp_signature_on_pdf(data, signature_png)
-                continue
-            except Exception as exc:
-                st.warning(f"Could not apply the browser signature to {label}: {exc}")
-        signed[label] = data
-    return signed
+    return pdfs
 
 
 # ─── Address / date parsing ───────────────────────────────────────────────────
@@ -2619,7 +2639,6 @@ with tab_manual:
         else:
             try:
                 pdfs, gen_warnings = _generate_pdfs(case_for_forms)
-                pdfs = _apply_browser_signature(pdfs)
                 # Record that this member has generated their forms (stage
                 # tracking in the officer portal) and refresh the record.
                 case["forms_generated_at"] = datetime.now().isoformat(timespec="seconds")
