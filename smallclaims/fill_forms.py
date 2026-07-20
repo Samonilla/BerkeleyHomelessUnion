@@ -930,10 +930,18 @@ def fill_sc107(case, template_path, output_path):
     main_bytes = Path(output_path).read_bytes()
     att_bytes = Path(att_path).read_bytes()
     merged = PdfWriter()
-    merged.append(PdfReader(io.BytesIO(main_bytes)))
-    merged.append(PdfReader(io.BytesIO(att_bytes)))
+
+    # Keep backing streams alive until write completes. pypdf can keep
+    # references to source streams while writing, and ephemeral BytesIO
+    # instances may trigger "I/O operation on closed file".
+    main_stream = io.BytesIO(main_bytes)
+    att_stream = io.BytesIO(att_bytes)
+    merged.append(PdfReader(main_stream))
+    merged.append(PdfReader(att_stream))
     with open(output_path, "wb") as f:
         merged.write(f)
+    main_stream.close()
+    att_stream.close()
     try:
         os.remove(att_path)
     except OSError:
