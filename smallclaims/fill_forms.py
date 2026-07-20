@@ -277,7 +277,7 @@ def validate_case(case):
 # CORE PDF WRITE
 # ─────────────────────────────────────────────────────────────
 
-def _write_pdf(template_path, output_path, values):
+def _write_pdf(template_path, output_path, values, field_appearances: dict[str, str] | None = None):
     # Keep template bytes in memory for the full write lifecycle.
     # Some runtimes can invalidate file-backed handles while pypdf still
     # lazily reads from the source document during writer.write().
@@ -288,6 +288,26 @@ def _write_pdf(template_path, output_path, values):
 
     for page in writer.pages:
         writer.update_page_form_field_values(page, values)
+
+    if field_appearances:
+        try:
+            for page in writer.pages:
+                annots = page.get("/Annots") or []
+                for annot_ref in annots:
+                    annot = annot_ref.get_object()
+                    names = {str(annot.get("/T") or "")}
+                    parent = annot.get("/Parent")
+                    parent_obj = parent.get_object() if parent else None
+                    if parent_obj is not None:
+                        names.add(str(parent_obj.get("/T") or ""))
+                    for field_name, appearance in field_appearances.items():
+                        if field_name not in names:
+                            continue
+                        annot.update({NameObject("/DA"): appearance})
+                        if parent_obj is not None:
+                            parent_obj.update({NameObject("/DA"): appearance})
+        except Exception:
+            pass
 
     # Ensure PDF viewers render the updated field values by setting
     # the AcroForm /NeedAppearances flag. Some viewers require this
@@ -345,7 +365,10 @@ def _write_pdf(template_path, output_path, values):
 
 def _case_name(case):
     d = case.get("defendant", DEFENDANT_DEFAULTS["city_of_oakland"])
-    return f"{case['plaintiff']['name']} v. {d.get('name', 'City of Oakland')}"
+    defendant_name = d.get("name", "City of Oakland")
+    if case.get("additional_defendants"):
+        defendant_name = f"{defendant_name}, et al."
+    return f"{case['plaintiff']['name']} v. {defendant_name}"
 
 
 def _sc100_section5_fields(case: dict, meta: dict) -> dict:
@@ -604,7 +627,14 @@ def fill_fw003(case, template_path, output_path):
         "FW-003[0].Page2[0].PE_P2Header_gp[0].CaseNumber_ft[0]":        case.get("case_number", ""),
     }
 
-    _write_pdf(template_path, output_path, values)
+    _write_pdf(
+        template_path,
+        output_path,
+        values,
+        field_appearances={
+            "CaseName_ft[0]": "/Helv 8 Tf 0 g",
+        },
+    )
     _safe_print(f"  ✓ FW-003  → {output_path}")
 
 
