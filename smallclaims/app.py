@@ -275,6 +275,21 @@ def _generate_pdfs(case: dict) -> tuple[dict, list[str]]:
                 # Keep going; caller can decide whether to stop if nothing succeeded.
                 pass
 
+    def _append_pdf_bytes(base_bytes: bytes, attachment_bytes: bytes) -> bytes:
+        from pypdf import PdfReader, PdfWriter
+
+        base_stream = io.BytesIO(base_bytes)
+        attachment_stream = io.BytesIO(attachment_bytes)
+        merged = PdfWriter()
+        merged.append(PdfReader(base_stream))
+        merged.append(PdfReader(attachment_stream))
+
+        out = io.BytesIO()
+        merged.write(out)
+        base_stream.close()
+        attachment_stream.close()
+        return out.getvalue()
+
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         with _quiet():
@@ -283,6 +298,14 @@ def _generate_pdfs(case: dict) -> tuple[dict, list[str]]:
                 lambda: fill_sc100(case, str(_TPL / "sc100.pdf"), str(tmp / "sc100.pdf"), _META_SC100),
                 tmp / "sc100.pdf",
             )
+            if result.get("SC-100") and case.get("sc100_attachment_bytes"):
+                try:
+                    result["SC-100"] = _append_pdf_bytes(
+                        result["SC-100"],
+                        case["sc100_attachment_bytes"],
+                    )
+                except Exception as exc:
+                    warnings.append(f"SC-100 attachment failed: {exc}")
             _attempt(
                 "FW-001",
                 lambda: fill_fw001(case, str(_TPL / "fw001.pdf"), str(tmp / "fw001.pdf"), _META_FW001),
@@ -2011,6 +2034,19 @@ with tab_manual:
         height=140,
         placeholder="Extra detail beyond the first 200 words goes here.",
     )
+    sc100_upload = st.file_uploader(
+        "Upload a PDF to attach behind SC-100",
+        type=["pdf"],
+        key="manual_sc100_attachment_pdf",
+        help="This PDF will be appended behind the generated SC-100 automatically.",
+    )
+    if sc100_upload is not None:
+        st.session_state["sc100_attachment_bytes"] = sc100_upload.getvalue()
+        st.session_state["sc100_attachment_name"] = sc100_upload.name
+        st.caption(f"Will attach: {sc100_upload.name}")
+    else:
+        st.session_state.pop("sc100_attachment_bytes", None)
+        st.session_state.pop("sc100_attachment_name", None)
 
     # ── List your damages (used on the claim form, declaration, SC-100) ─
     st.divider()
@@ -2440,6 +2476,9 @@ with tab_manual:
         return case
 
     manual_case = _manual_case_from_inputs()
+    case_for_forms = dict(manual_case)
+    if st.session_state.get("sc100_attachment_bytes"):
+        case_for_forms["sc100_attachment_bytes"] = st.session_state.get("sc100_attachment_bytes")
     _manual_has_content = any([
         manual_case["plaintiff"]["name"],
         manual_case["claim"]["amount"],
@@ -2476,7 +2515,7 @@ with tab_manual:
             )
         else:
             try:
-                pdfs, gen_warnings = _generate_pdfs(case)
+                pdfs, gen_warnings = _generate_pdfs(case_for_forms)
                 # Record that this member has generated their forms (stage
                 # tracking in the officer portal) and refresh the record.
                 case["forms_generated_at"] = datetime.now().isoformat(timespec="seconds")
