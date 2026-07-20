@@ -2470,28 +2470,42 @@ with tab_manual:
     st.markdown("**Signature in browser**")
     st.caption("Draw your signature once. It will be placed on the PDFs that need your signature.")
     sig_col, sig_tools = st.columns([4, 1])
+    signature_nonce = int(st.session_state.get("manual_signature_nonce", 0))
     with sig_col:
         sig_result = st_canvas(
             fill_color="rgba(255, 255, 255, 0)",
             stroke_width=3,
             stroke_color="#111111",
             background_color="#ffffff",
-            width=520,
-            height=160,
+            width=560,
+            height=180,
             drawing_mode="freedraw",
-            key="manual_signature_canvas",
+            update_streamlit=False,
+            display_toolbar=True,
+            key=f"manual_signature_canvas_{signature_nonce}",
         )
     with sig_tools:
+        if st.button("Capture signature", key="manual_signature_capture", use_container_width=True):
+            if sig_result and sig_result.image_data is not None:
+                image_array = np.asarray(sig_result.image_data)
+                if image_array.ndim == 3 and np.any(image_array[:, :, :3] < 250):
+                    st.session_state["manual_signature_image"] = sig_result.image_data
+                    st.session_state["manual_signature_png"] = _signature_png_bytes()
+                    st.session_state["manual_signature_captured"] = True
+                    st.rerun()
+            st.warning("Draw a signature in the box first, then click Capture signature.")
         if st.button("Clear signature", key="manual_signature_clear", use_container_width=True):
             st.session_state.pop("manual_signature_image", None)
             st.session_state.pop("manual_signature_png", None)
+            st.session_state.pop("manual_signature_captured", None)
+            st.session_state["manual_signature_nonce"] = signature_nonce + 1
             st.rerun()
-    if sig_result and sig_result.image_data is not None:
+    if st.session_state.get("manual_signature_captured") and st.session_state.get("manual_signature_png"):
+        st.caption("Signature captured. It will be used when you sign individual PDFs.")
+    elif sig_result and sig_result.image_data is not None:
         image_array = np.asarray(sig_result.image_data)
         if image_array.ndim == 3 and np.any(image_array[:, :, :3] < 250):
-            st.session_state["manual_signature_image"] = sig_result.image_data
-            st.session_state["manual_signature_png"] = _signature_png_bytes()
-            st.caption("Signature captured. It will be embedded into the PDF packet.")
+            st.caption("Draw your signature, then click Capture signature.")
         elif "manual_signature_png" not in st.session_state:
             st.caption("Draw your signature in the box above.")
 
