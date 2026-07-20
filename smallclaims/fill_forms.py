@@ -29,6 +29,14 @@ try:
 except Exception:
     NameObject = BooleanObject = DictionaryObject = None
 
+
+def _safe_print(*args, **kwargs):
+    """Best-effort logging that never breaks form generation."""
+    try:
+        print(*args, **kwargs)
+    except Exception:
+        pass
+
 # Optional: flatten PDFs to ensure appearances are rendered in all viewers.
 def _flatten_pdf(path: str, scale: float = 2.0) -> None:
     """Rasterize each page and re-save as a PDF to bake in appearances.
@@ -481,7 +489,7 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
         _flatten_pdf(output_path)
     except Exception:
         pass
-    print(f"  ✓ SC-100  → {output_path}")
+    _safe_print(f"  ✓ SC-100  → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -573,7 +581,7 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
         _flatten_pdf(output_path)
     except Exception:
         pass
-    print(f"  ✓ FW-001  → {output_path}")
+    _safe_print(f"  ✓ FW-001  → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -593,7 +601,7 @@ def fill_fw003(case, template_path, output_path):
     }
 
     _write_pdf(template_path, output_path, values)
-    print(f"  ✓ FW-003  → {output_path}")
+    _safe_print(f"  ✓ FW-003  → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -633,7 +641,7 @@ def fill_sc105(case, template_path, output_path):
     }
 
     _write_pdf(template_path, output_path, values)
-    print(f"  ✓ SC-105  → {output_path}")
+    _safe_print(f"  ✓ SC-105  → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -669,7 +677,7 @@ def fill_sc109_exemption(case, template_path, output_path):
     }
 
     _write_pdf(template_path, output_path, values)
-    print(f"  ✓ SC-109 exemption → {output_path}")
+    _safe_print(f"  ✓ SC-109 exemption → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -710,7 +718,7 @@ def fill_sc112a(case, template_path, output_path):
         values[f"SC-112A[0].Page1[0].List3[0].Lib[0].Table[0].FillText11\\.{sfx}[0]"] = _mail_addr(dd)
 
     _write_pdf(template_path, output_path, values)
-    print(f"  ✓ SC-112A → {output_path}")
+    _safe_print(f"  ✓ SC-112A → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -811,7 +819,7 @@ def fill_sc150(case, template_path, output_path):
     }
 
     _write_pdf(template_path, output_path, values)
-    print(f"  ✓ SC-150  → {output_path}")
+    _safe_print(f"  ✓ SC-150  → {output_path}")
 
 
 def has_postponement(case: dict) -> bool:
@@ -951,7 +959,7 @@ def fill_sc107(case, template_path, output_path):
         os.remove(att_path)
     except OSError:
         pass
-    print(f"  ✓ SC-107  → {output_path} (boxes checked; Attachments 2a, 3, 4 appended)")
+    _safe_print(f"  ✓ SC-107  → {output_path} (boxes checked; Attachments 2a, 3, 4 appended)")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1004,7 +1012,7 @@ def fill_sc109(case, template_path, output_path):
     }
 
     _write_pdf(template_path, output_path, values)
-    print(f"  ✓ SC-109  → {output_path}")
+    _safe_print(f"  ✓ SC-109  → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1083,7 +1091,7 @@ def fill_sc100a_for_party(case, output_path, party: dict, role: str = "defendant
     prefer to use it; currently we render a simple matching layout via reportlab.
     """
     _render_sc100a_reportlab(party, case, output_path, role=role)
-    print(f"  ✓ SC-100A → {output_path}")
+    _safe_print(f"  ✓ SC-100A → {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1118,11 +1126,11 @@ def fill_case(case_path):
     try:
         validate_case(case)
     except ValueError as e:
-        print(f"\n[SKIP] {case_path}\n{e}")
+        _safe_print(f"\n[SKIP] {case_path}\n{e}")
         return False
 
     name_slug = re.sub(r"[^a-z0-9]+", "_", case["plaintiff"]["name"].lower()).strip("_")
-    print(f"\n→ {case['plaintiff']['name']}")
+    _safe_print(f"\n→ {case['plaintiff']['name']}")
 
     fill_sc100(case,  TEMPLATES["sc100"],  f"output/{name_slug}_sc100.pdf",  FIELD_META["sc100"])
     fill_fw001(case,  TEMPLATES["fw001"],  f"output/{name_slug}_fw001.pdf",  FIELD_META["fw001"])
@@ -1244,8 +1252,8 @@ def generate_template(output_path):
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(CASE_TEMPLATE, f, indent=2)
-    print(f"Template written → {output_path}")
-    print(f"Edit the TODO fields, then run:  python fill_forms.py {output_path}")
+    _safe_print(f"Template written → {output_path}")
+    _safe_print(f"Edit the TODO fields, then run:  python fill_forms.py {output_path}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1287,17 +1295,17 @@ def main():
     if target.is_dir():
         cases = sorted(target.glob("*.json"))
         if not cases:
-            print(f"No JSON files found in {target}")
+            _safe_print(f"No JSON files found in {target}")
             sys.exit(1)
         results = [fill_case(f) for f in cases]
         ok = sum(results)
-        print(f"\nDone: {ok}/{len(cases)} cases filled successfully.")
+        _safe_print(f"\nDone: {ok}/{len(cases)} cases filled successfully.")
         if ok < len(cases):
             sys.exit(1)
     else:
         if not fill_case(target):
             sys.exit(1)
-        print("\nDone.")
+        _safe_print("\nDone.")
 
 
 if __name__ == "__main__":
