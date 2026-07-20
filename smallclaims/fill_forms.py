@@ -371,6 +371,29 @@ def _case_name(case):
     return f"{case['plaintiff']['name']} v. {defendant_name}"
 
 
+def _ellipsize_middle(text: str, max_len: int) -> str:
+    text = str(text or "").strip()
+    if len(text) <= max_len:
+        return text
+    if max_len <= 3:
+        return text[:max_len]
+    keep_left = (max_len - 3) // 2
+    keep_right = max_len - 3 - keep_left
+    return f"{text[:keep_left]}...{text[-keep_right:]}"
+
+
+def _fw003_case_name(case: dict) -> str:
+    plaintiff_name = str((case.get("plaintiff") or {}).get("name") or "Plaintiff").strip()
+    defendant = case.get("defendant") or DEFENDANT_DEFAULTS["city_of_oakland"]
+    defendant_name = str(defendant.get("name") or "City of Oakland").strip()
+    if case.get("additional_defendants"):
+        defendant_name = f"{defendant_name}, et al."
+
+    plaintiff_name = _ellipsize_middle(plaintiff_name, 28)
+    defendant_name = _ellipsize_middle(defendant_name, 28)
+    return f"{plaintiff_name} v. {defendant_name}"
+
+
 def _sc100_section5_fields(case: dict, meta: dict) -> dict:
     """Build SC-100 page 3 section 5 fields (a-e), defaulting to option a."""
     claim = case.get("claim") or {}
@@ -617,7 +640,7 @@ def fill_fw003(case, template_path, output_path):
     values = {
         "FW-003[0].Page1[0].Stamp_court_case[0].CourtInfo_ft[0]":  _court_info(case),
         "FW-003[0].Page1[0].Stamp_court_case[0].CaseNumber_ft[0]": case.get("case_number", ""),
-        "FW-003[0].Page1[0].Stamp_court_case[0].CaseName_ft[0]":   _case_name(case),
+        "FW-003[0].Page1[0].Stamp_court_case[0].CaseName_ft[0]":   _fw003_case_name(case),
         "FW-003[0].Page1[0].PersonWaivingName_ft[0]":              contact["name"],
         "FW-003[0].Page1[0].FillText23[0]":                        contact["street"],
         "FW-003[0].Page1[0].FillText21[0]":                        contact["city"],
@@ -632,7 +655,7 @@ def fill_fw003(case, template_path, output_path):
         output_path,
         values,
         field_appearances={
-            "CaseName_ft[0]": "/Helv 8 Tf 0 g",
+            "CaseName_ft[0]": "/Helv 7 Tf 0 g",
         },
     )
     _safe_print(f"  ✓ FW-003  → {output_path}")
