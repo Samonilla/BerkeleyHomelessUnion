@@ -589,14 +589,18 @@ def fill_fw001(case, template_path, output_path, field_meta_path):
 # ─────────────────────────────────────────────────────────────
 
 def fill_fw003(case, template_path, output_path):
-    p = case["plaintiff"]
+    contact = _plaintiff_contact(case)
 
     values = {
         "FW-003[0].Page1[0].Stamp_court_case[0].CourtInfo_ft[0]":  _court_info(case),
         "FW-003[0].Page1[0].Stamp_court_case[0].CaseNumber_ft[0]": case.get("case_number", ""),
         "FW-003[0].Page1[0].Stamp_court_case[0].CaseName_ft[0]":   _case_name(case),
-        "FW-003[0].Page1[0].PersonWaivingName_ft[0]":              p["name"],
-        "FW-003[0].Page2[0].PE_P2Header_gp[0].PersonWaivingName_ft[0]": p["name"],
+        "FW-003[0].Page1[0].PersonWaivingName_ft[0]":              contact["name"],
+        "FW-003[0].Page1[0].FillText23[0]":                        contact["street"],
+        "FW-003[0].Page1[0].FillText21[0]":                        contact["city"],
+        "FW-003[0].Page1[0].FillText20[0]":                        contact["state"],
+        "FW-003[0].Page1[0].FillText22[0]":                        contact["zip"],
+        "FW-003[0].Page2[0].PE_P2Header_gp[0].PersonWaivingName_ft[0]": contact["name"],
         "FW-003[0].Page2[0].PE_P2Header_gp[0].CaseNumber_ft[0]":        case.get("case_number", ""),
     }
 
