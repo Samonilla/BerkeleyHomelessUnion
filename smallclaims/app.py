@@ -254,61 +254,93 @@ def _quiet():
     yield
 
 
-def _generate_pdfs(case: dict) -> dict:
-    """Fill all forms. Returns {label: bytes}. Raises ValueError on bad input."""
+def _generate_pdfs(case: dict) -> tuple[dict, list[str]]:
+    """Fill forms and return (pdf_bytes_by_label, warnings).
+
+    Core and optional forms are attempted independently so one form failure
+    does not block the rest of the packet.
+    """
     validate_case(case)
     result = {}
+    warnings: list[str] = []
+
+    def _attempt(label: str, build_fn, output_path: Path, *, optional: bool = False) -> None:
+        try:
+            build_fn()
+            result[label] = output_path.read_bytes()
+        except Exception as exc:
+            msg = f"{label} failed: {exc}"
+            warnings.append(msg)
+            if not optional:
+                # Keep going; caller can decide whether to stop if nothing succeeded.
+                pass
+
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         with _quiet():
-            fill_sc100(case, str(_TPL/"sc100.pdf"), str(tmp/"sc100.pdf"), _META_SC100)
-            result["SC-100"] = (tmp/"sc100.pdf").read_bytes()
-
-            fill_fw001(case, str(_TPL/"fw001.pdf"), str(tmp/"fw001.pdf"), _META_FW001)
-            result["FW-001"] = (tmp/"fw001.pdf").read_bytes()
-
-            fill_fw003(case, str(_TPL/"fw003.pdf"), str(tmp/"fw003.pdf"))
-            result["FW-003"] = (tmp/"fw003.pdf").read_bytes()
-
-            fill_sc112a(case, str(_TPL/"sc112a.pdf"), str(tmp/"sc112a.pdf"))
-            result["SC-112A"] = (tmp/"sc112a.pdf").read_bytes()
+            _attempt(
+                "SC-100",
+                lambda: fill_sc100(case, str(_TPL / "sc100.pdf"), str(tmp / "sc100.pdf"), _META_SC100),
+                tmp / "sc100.pdf",
+            )
+            _attempt(
+                "FW-001",
+                lambda: fill_fw001(case, str(_TPL / "fw001.pdf"), str(tmp / "fw001.pdf"), _META_FW001),
+                tmp / "fw001.pdf",
+            )
+            _attempt(
+                "FW-003",
+                lambda: fill_fw003(case, str(_TPL / "fw003.pdf"), str(tmp / "fw003.pdf")),
+                tmp / "fw003.pdf",
+            )
+            _attempt(
+                "SC-112A",
+                lambda: fill_sc112a(case, str(_TPL / "sc112a.pdf"), str(tmp / "sc112a.pdf")),
+                tmp / "sc112a.pdf",
+            )
 
             # SC-150 Request to Postpone Trial — only if postponement data present
             if has_postponement(case):
-                try:
-                    fill_sc150(case, str(_TPL/"sc150.pdf"), str(tmp/"sc150.pdf"))
-                    result["SC-150"] = (tmp/"sc150.pdf").read_bytes()
-                except Exception:
-                    # Non-fatal: continue generating other forms
-                    pass
+                _attempt(
+                    "SC-150",
+                    lambda: fill_sc150(case, str(_TPL / "sc150.pdf"), str(tmp / "sc150.pdf")),
+                    tmp / "sc150.pdf",
+                    optional=True,
+                )
 
             # SC-107 subpoena package: form with attachment boxes checked
             # plus Attachment 2a / 3 / 4 pages (only if subpoena info present)
             _sub = case.get("subpoena", {}) or {}
             if any(r for r in (_sub.get("requests") or []) if r) or (_sub.get("to") or "").strip():
-                try:
-                    fill_sc107(case, str(_TPL/"sc107.pdf"), str(tmp/"sc107.pdf"))
-                    result["SC-107"] = (tmp/"sc107.pdf").read_bytes()
-                except Exception:
-                    # Non-fatal: continue generating other forms
-                    pass
+                _attempt(
+                    "SC-107",
+                    lambda: fill_sc107(case, str(_TPL / "sc107.pdf"), str(tmp / "sc107.pdf")),
+                    tmp / "sc107.pdf",
+                    optional=True,
+                )
 
             # SC-100A: generate one form per additional defendant (if present)
             for i, ad in enumerate(case.get('additional_defendants', []) or [] , start=1):
-                try:
-                    outp = tmp/f"sc100a_defendant_{i}.pdf"
-                    fill_sc100a_for_party(case, str(outp), ad, role='defendant')
-                    result[f"SC-100A-DEF-{i}"] = outp.read_bytes()
-                except Exception:
-                    pass
+                outp = tmp / f"sc100a_defendant_{i}.pdf"
+                _attempt(
+                    f"SC-100A-DEF-{i}",
+                    lambda outp=outp, ad=ad: fill_sc100a_for_party(case, str(outp), ad, role='defendant'),
+                    outp,
+                    optional=True,
+                )
 
             exhibits = [e for e in (case.get("exhibits") or []) if str(e.get("description") or "").strip()]
             if exhibits:
                 try:
                     result["EXHIBIT-COVERS"] = _build_exhibit_covers_pdf(exhibits, case)
-                except Exception:
-                    pass
-    return result
+                except Exception as exc:
+                    warnings.append(f"EXHIBIT-COVERS failed: {exc}")
+
+    if not result:
+        detail = "; ".join(warnings[:4]) if warnings else "unknown error"
+        raise RuntimeError(f"No forms could be generated. {detail}")
+
+    return result, warnings
 
 
 def _make_zip(pdfs: dict, slug: str, flatten: bool = False) -> bytes:
@@ -2444,7 +2476,7 @@ with tab_manual:
             )
         else:
             try:
-                pdfs = _generate_pdfs(case)
+                pdfs, gen_warnings = _generate_pdfs(case)
                 # Record that this member has generated their forms (stage
                 # tracking in the officer portal) and refresh the record.
                 case["forms_generated_at"] = datetime.now().isoformat(timespec="seconds")
@@ -2454,6 +2486,11 @@ with tab_manual:
                 except Exception:
                     pass
                 _show_downloads(pdfs, _slug(name.strip()))
+                if gen_warnings:
+                    st.warning(
+                        "Some optional forms could not be generated:\n- "
+                        + "\n- ".join(gen_warnings[:8])
+                    )
                 st.download_button(
                     "💾  Save Case Data (JSON)",
                     data=json.dumps(case, indent=2).encode(),
