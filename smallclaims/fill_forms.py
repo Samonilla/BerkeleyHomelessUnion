@@ -29,6 +29,11 @@ try:
 except Exception:
     NameObject = BooleanObject = DictionaryObject = None
 
+try:
+    from pypdf.generic import TextStringObject
+except Exception:
+    TextStringObject = None
+
 
 def _safe_print(*args, **kwargs):
     """Best-effort logging that never breaks form generation."""
@@ -303,9 +308,10 @@ def _write_pdf(template_path, output_path, values, field_appearances: dict[str, 
                     for field_name, appearance in field_appearances.items():
                         if field_name not in names:
                             continue
-                        annot.update({NameObject("/DA"): appearance})
+                        da_value = TextStringObject(appearance) if TextStringObject else appearance
+                        annot.update({NameObject("/DA"): da_value})
                         if parent_obj is not None:
-                            parent_obj.update({NameObject("/DA"): appearance})
+                            parent_obj.update({NameObject("/DA"): da_value})
         except Exception:
             pass
 
