@@ -399,25 +399,33 @@ def _make_zip(pdfs: dict, slug: str, flatten: bool = False) -> bytes:
 def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
     prefix = f"{label} — " if label else ""
     st.success(f"{prefix}Generated {len(pdfs)} forms.")
+    zip_bytes = _make_zip(pdfs, slug, flatten=False)
     st.download_button(
         "⬇️  Download All Forms (ZIP)",
-        data=_make_zip(pdfs, slug, flatten=False),
+        data=zip_bytes,
         file_name=f"{slug}_forms.zip",
         mime="application/zip",
         type="primary",
         width="stretch",
         key=f"zip_{slug}",
     )
-    # Optional: flattened ZIP for viewers that ignore form appearances
-    st.download_button(
-        "⬇️  Download All Forms (ZIP, flattened for compatibility)",
-        data=_make_zip(pdfs, slug, flatten=True),
-        file_name=f"{slug}_forms_flattened.zip",
-        mime="application/zip",
-        type="secondary",
-        width="stretch",
-        key=f"zip_flat_{slug}",
-    )
+    # Optional: flattened ZIP for viewers that ignore form appearances.
+    # If flattening fails in the runtime, keep the main flow working.
+    try:
+        zip_flat_bytes = _make_zip(pdfs, slug, flatten=True)
+    except Exception as exc:
+        st.caption(f"Flattened ZIP unavailable in this runtime: {exc}")
+        zip_flat_bytes = None
+    if zip_flat_bytes is not None:
+        st.download_button(
+            "⬇️  Download All Forms (ZIP, flattened for compatibility)",
+            data=zip_flat_bytes,
+            file_name=f"{slug}_forms_flattened.zip",
+            mime="application/zip",
+            type="secondary",
+            width="stretch",
+            key=f"zip_flat_{slug}",
+        )
     cols = st.columns(len(pdfs))
     for col, (lbl, data) in zip(cols, pdfs.items()):
         fname = f"{slug}_{lbl.lower().replace('-', '')}.pdf"
