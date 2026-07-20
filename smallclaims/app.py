@@ -248,12 +248,10 @@ _DEFAULT_SUBPOENA_REQUESTS = [
 
 @contextlib.contextmanager
 def _quiet():
-    with open(os.devnull, "w") as nul:
-        old, sys.stdout = sys.stdout, nul
-        try:
-            yield
-        finally:
-            sys.stdout = old
+    # Streamlit's runtime can swap/close stdout handlers between reruns.
+    # Redirecting global stdout here has intermittently caused
+    # "I/O operation on closed file" during form generation.
+    yield
 
 
 def _generate_pdfs(case: dict) -> dict:
