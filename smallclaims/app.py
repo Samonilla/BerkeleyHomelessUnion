@@ -18,9 +18,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import streamlit as st
 from dateutil import parser as _dateutil
 from extra_streamlit_components import CookieManager
+from streamlit_drawable_canvas import st_canvas
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
@@ -490,6 +492,79 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
                 mime="application/pdf", width="stretch",
                 key=f"pdf_{slug}_{lbl}",
             )
+
+
+def _signature_png_bytes() -> bytes | None:
+    canvas_image = st.session_state.get("manual_signature_image")
+    if canvas_image is None:
+        return None
+    try:
+        array = np.asarray(canvas_image)
+        if array.size == 0:
+            return None
+        if array.ndim == 3 and np.all(array[:, :, :3] >= 250):
+            return None
+        from PIL import Image
+
+        image = Image.fromarray(array.astype("uint8")).convert("RGBA")
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes) -> bytes:
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen.canvas import Canvas
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    writer = PdfWriter()
+    signature_image = ImageReader(io.BytesIO(signature_png))
+
+    for page_number, page in enumerate(reader.pages):
+        should_stamp = page_number == len(reader.pages) - 1
+        if should_stamp:
+            width = float(page.mediabox.width)
+            height = float(page.mediabox.height)
+            overlay_stream = io.BytesIO()
+            overlay_canvas = Canvas(overlay_stream, pagesize=(width, height))
+            overlay_canvas.drawImage(
+                signature_image,
+                width - 205,
+                62,
+                width=150,
+                height=48,
+                mask="auto",
+                preserveAspectRatio=True,
+                anchor="sw",
+            )
+            overlay_canvas.save()
+            overlay_stream.seek(0)
+            overlay_page = PdfReader(overlay_stream).pages[0]
+            page.merge_page(overlay_page)
+        writer.add_page(page)
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def _apply_browser_signature(pdfs: dict) -> dict:
+    signature_png = _signature_png_bytes()
+    if not signature_png:
+        return pdfs
+    signed = {}
+    for label, data in pdfs.items():
+        if label in {"SC-100", "FW-001", "SC-150"}:
+            try:
+                signed[label] = _stamp_signature_on_pdf(data, signature_png)
+                continue
+            except Exception as exc:
+                st.warning(f"Could not apply the browser signature to {label}: {exc}")
+        signed[label] = data
+    return signed
 
 
 # ─── Address / date parsing ───────────────────────────────────────────────────
@@ -2372,6 +2447,34 @@ with tab_manual:
                 exp_housing = st.text_input("Housing ($)", value="0", key="manual_exp_housing")
                 total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300", key="manual_total_expenses")
 
+    st.markdown("**Signature in browser**")
+    st.caption("Draw your signature once. It will be placed on the PDFs that need your signature.")
+    sig_col, sig_tools = st.columns([4, 1])
+    with sig_col:
+        sig_result = st_canvas(
+            fill_color="rgba(255, 255, 255, 0)",
+            stroke_width=3,
+            stroke_color="#111111",
+            background_color="#ffffff",
+            width=520,
+            height=160,
+            drawing_mode="freedraw",
+            key="manual_signature_canvas",
+        )
+    with sig_tools:
+        if st.button("Clear signature", key="manual_signature_clear", use_container_width=True):
+            st.session_state.pop("manual_signature_image", None)
+            st.session_state.pop("manual_signature_png", None)
+            st.rerun()
+    if sig_result and sig_result.image_data is not None:
+        image_array = np.asarray(sig_result.image_data)
+        if image_array.ndim == 3 and np.any(image_array[:, :, :3] < 250):
+            st.session_state["manual_signature_image"] = sig_result.image_data
+            st.session_state["manual_signature_png"] = _signature_png_bytes()
+            st.caption("Signature captured. It will be embedded into the PDF packet.")
+        elif "manual_signature_png" not in st.session_state:
+            st.caption("Draw your signature in the box above.")
+
     _missing_5a_public_benefit = fw_basis.startswith("5a") and not any([
         bool(recv_medi_cal),
         bool(recv_snap),
@@ -2516,6 +2619,7 @@ with tab_manual:
         else:
             try:
                 pdfs, gen_warnings = _generate_pdfs(case_for_forms)
+                pdfs = _apply_browser_signature(pdfs)
                 # Record that this member has generated their forms (stage
                 # tracking in the officer portal) and refresh the record.
                 case["forms_generated_at"] = datetime.now().isoformat(timespec="seconds")
