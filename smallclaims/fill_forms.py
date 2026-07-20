@@ -270,7 +270,11 @@ def validate_case(case):
 # ─────────────────────────────────────────────────────────────
 
 def _write_pdf(template_path, output_path, values):
-    reader = PdfReader(template_path)
+    # Keep template bytes in memory for the full write lifecycle.
+    # Some runtimes can invalidate file-backed handles while pypdf still
+    # lazily reads from the source document during writer.write().
+    template_stream = io.BytesIO(Path(template_path).read_bytes())
+    reader = PdfReader(template_stream)
     writer = PdfWriter()
     writer.append(reader)
 
@@ -321,6 +325,7 @@ def _write_pdf(template_path, output_path, values):
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "wb") as f:
         writer.write(f)
+    template_stream.close()
 
     # Try to flatten the PDF so appearances are visually baked in for all viewers.
     # Flattening is optional and will be skipped if PyMuPDF (`pymupdf`) isn't installed.
