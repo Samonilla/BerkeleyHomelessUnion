@@ -2468,46 +2468,63 @@ with tab_manual:
                 total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300", key="manual_total_expenses")
 
     st.markdown("**Signature in browser**")
-    st.caption("Draw your signature once. It will be placed on the PDFs that need your signature.")
-    sig_col, sig_tools = st.columns([4, 1])
+    st.caption("Draw your signature below, then click Save drawn signature.")
     signature_nonce = int(st.session_state.get("manual_signature_nonce", 0))
-    with sig_col:
-        sig_result = st_canvas(
-            fill_color="rgba(255, 255, 255, 0)",
-            stroke_width=3,
-            stroke_color="#111111",
-            background_color="#ffffff",
-            width=560,
-            height=180,
-            drawing_mode="freedraw",
-            update_streamlit=False,
-            display_toolbar=True,
-            key=f"manual_signature_canvas_{signature_nonce}",
-        )
-    with sig_tools:
-        if st.button("Capture signature", key="manual_signature_capture", use_container_width=True):
+    sig_result = st_canvas(
+        fill_color="rgba(255, 255, 255, 0)",
+        stroke_width=3,
+        stroke_color="#111111",
+        background_color="#ffffff",
+        width=700,
+        height=190,
+        drawing_mode="freedraw",
+        update_streamlit=False,
+        display_toolbar=False,
+        key=f"manual_signature_canvas_{signature_nonce}",
+    )
+    sig_actions1, sig_actions2 = st.columns(2)
+    with sig_actions1:
+        if st.button("Save drawn signature", key="manual_signature_capture", use_container_width=True):
+            saved = False
             if sig_result and sig_result.image_data is not None:
                 image_array = np.asarray(sig_result.image_data)
                 if image_array.ndim == 3 and np.any(image_array[:, :, :3] < 250):
                     st.session_state["manual_signature_image"] = sig_result.image_data
                     st.session_state["manual_signature_png"] = _signature_png_bytes()
-                    st.session_state["manual_signature_captured"] = True
-                    st.rerun()
-            st.warning("Draw a signature in the box first, then click Capture signature.")
+                    saved = bool(st.session_state.get("manual_signature_png"))
+            if saved:
+                st.success("Signature saved. You can now sign individual PDFs below.")
+            else:
+                st.warning("Draw a signature first, then click Save drawn signature.")
+    with sig_actions2:
         if st.button("Clear signature", key="manual_signature_clear", use_container_width=True):
             st.session_state.pop("manual_signature_image", None)
             st.session_state.pop("manual_signature_png", None)
-            st.session_state.pop("manual_signature_captured", None)
             st.session_state["manual_signature_nonce"] = signature_nonce + 1
             st.rerun()
-    if st.session_state.get("manual_signature_captured") and st.session_state.get("manual_signature_png"):
-        st.caption("Signature captured. It will be used when you sign individual PDFs.")
-    elif sig_result and sig_result.image_data is not None:
-        image_array = np.asarray(sig_result.image_data)
-        if image_array.ndim == 3 and np.any(image_array[:, :, :3] < 250):
-            st.caption("Draw your signature, then click Capture signature.")
-        elif "manual_signature_png" not in st.session_state:
-            st.caption("Draw your signature in the box above.")
+
+    st.caption("If drawing does not work on your device, upload a signature image instead (PNG/JPG).")
+    sig_upload = st.file_uploader(
+        "Upload signature image (optional fallback)",
+        type=["png", "jpg", "jpeg"],
+        key="manual_signature_upload",
+    )
+    if sig_upload is not None:
+        try:
+            from PIL import Image
+
+            uploaded_img = Image.open(io.BytesIO(sig_upload.getvalue())).convert("RGBA")
+            uploaded_array = np.asarray(uploaded_img)
+            st.session_state["manual_signature_image"] = uploaded_array
+            st.session_state["manual_signature_png"] = _signature_png_bytes()
+            st.success("Uploaded signature saved. You can now sign individual PDFs below.")
+        except Exception as exc:
+            st.error(f"Could not read uploaded signature image: {exc}")
+
+    if st.session_state.get("manual_signature_png"):
+        st.caption("Signature ready.")
+    else:
+        st.caption("No saved signature yet.")
 
     _missing_5a_public_benefit = fw_basis.startswith("5a") and not any([
         bool(recv_medi_cal),
