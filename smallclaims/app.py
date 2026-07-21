@@ -5,6 +5,7 @@ Run:  streamlit run app.py
 """
 
 import contextlib
+import base64
 import hashlib
 import io
 import json
@@ -20,9 +21,10 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import streamlit as st
+import streamlit.components.v1 as components
 from dateutil import parser as _dateutil
 from extra_streamlit_components import CookieManager
-from streamlit_drawable_canvas import st_canvas
+from streamlit_js_eval import get_local_storage, remove_local_storage
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
@@ -527,6 +529,10 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
 
 
 def _signature_png_bytes() -> bytes | None:
+    saved_png = st.session_state.get("manual_signature_png")
+    if isinstance(saved_png, (bytes, bytearray)) and saved_png:
+        return bytes(saved_png)
+
     canvas_image = st.session_state.get("manual_signature_image")
     if canvas_image is None:
         return None
@@ -544,6 +550,87 @@ def _signature_png_bytes() -> bytes | None:
         return buf.getvalue()
     except Exception:
         return None
+
+
+def _render_signature_pad(storage_key: str) -> None:
+        components.html(
+                f"""
+                <div style=\"border:1px solid #d0d0d0;border-radius:8px;padding:8px;background:#fff;\">
+                    <canvas id=\"sigpad\" width=\"900\" height=\"220\" style=\"width:100%;height:220px;touch-action:none;cursor:crosshair;\"></canvas>
+                    <div style=\"display:flex;justify-content:flex-end;margin-top:8px;\">
+                        <button id=\"clearSig\" style=\"padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fafafa;\">Clear box</button>
+                    </div>
+                </div>
+                <script>
+                    const canvas = document.getElementById('sigpad');
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.lineWidth = 4;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.strokeStyle = '#111111';
+
+                    const key = {json.dumps(storage_key)};
+
+                    function saveData() {{
+                        try {{
+                            const data = canvas.toDataURL('image/png');
+                            localStorage.setItem(key, data);
+                        }} catch (e) {{}}
+                    }}
+
+                    function clearPad() {{
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        try {{ localStorage.removeItem(key); }} catch (e) {{}}
+                    }}
+
+                    let drawing = false;
+                    function pos(evt) {{
+                        const r = canvas.getBoundingClientRect();
+                        return {{
+                            x: (evt.clientX - r.left) * (canvas.width / r.width),
+                            y: (evt.clientY - r.top) * (canvas.height / r.height)
+                        }};
+                    }}
+
+                    canvas.addEventListener('pointerdown', (evt) => {{
+                        drawing = true;
+                        const p = pos(evt);
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                    }});
+                    canvas.addEventListener('pointermove', (evt) => {{
+                        if (!drawing) return;
+                        const p = pos(evt);
+                        ctx.lineTo(p.x, p.y);
+                        ctx.stroke();
+                    }});
+                    const finish = () => {{ if (drawing) {{ drawing = false; saveData(); }} }};
+                    canvas.addEventListener('pointerup', finish);
+                    canvas.addEventListener('pointerleave', finish);
+
+                    document.getElementById('clearSig').addEventListener('click', (evt) => {{
+                        evt.preventDefault();
+                        clearPad();
+                    }});
+
+                    // Restore previous drawing if it exists.
+                    try {{
+                        const saved = localStorage.getItem(key);
+                        if (saved) {{
+                            const img = new Image();
+                            img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            img.src = saved;
+                        }}
+                    }} catch (e) {{}}
+                </script>
+                """,
+                height=280,
+                scrolling=False,
+        )
 
 
 def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str | None = None) -> bytes:
@@ -2480,28 +2567,24 @@ with tab_manual:
     st.markdown("**Signature in browser**")
     st.caption("Use your mouse (or finger) to draw directly in the white box, then click Create signature.")
     signature_nonce = int(st.session_state.get("manual_signature_nonce", 0))
-    sig_result = st_canvas(
-        fill_color="rgba(255, 255, 255, 0)",
-        stroke_width=4,
-        stroke_color="#111111",
-        background_color="#ffffff",
-        width=700,
-        height=190,
-        drawing_mode="freedraw",
-        update_streamlit=False,
-        display_toolbar=False,
-        key=f"manual_signature_canvas_{signature_nonce}",
+    _sig_storage_key = "bhu_signature_pad_data"
+    _render_signature_pad(_sig_storage_key)
+    stored_signature_data = get_local_storage(
+        _sig_storage_key,
+        component_key=f"manual_sig_storage_{signature_nonce}",
     )
     sig_actions1, sig_actions2 = st.columns(2)
     with sig_actions1:
         if st.button("Create signature", key="manual_signature_capture", use_container_width=True):
             saved = False
-            if sig_result and sig_result.image_data is not None:
-                image_array = np.asarray(sig_result.image_data)
-                if image_array.ndim == 3 and np.any(image_array[:, :, :3] < 250):
-                    st.session_state["manual_signature_image"] = sig_result.image_data
-                    st.session_state["manual_signature_png"] = _signature_png_bytes()
-                    saved = bool(st.session_state.get("manual_signature_png"))
+            raw = stored_signature_data if isinstance(stored_signature_data, str) else ""
+            if raw.startswith("data:image/png;base64,"):
+                try:
+                    png_bytes = base64.b64decode(raw.split(",", 1)[1])
+                    st.session_state["manual_signature_png"] = png_bytes
+                    saved = True
+                except Exception:
+                    saved = False
             if saved:
                 st.success("Signature saved. You can now sign individual PDFs below.")
             else:
@@ -2510,6 +2593,7 @@ with tab_manual:
         if st.button("Clear signature", key="manual_signature_clear", use_container_width=True):
             st.session_state.pop("manual_signature_image", None)
             st.session_state.pop("manual_signature_png", None)
+            remove_local_storage(_sig_storage_key, component_key=f"manual_sig_clear_store_{signature_nonce}")
             st.session_state["manual_signature_nonce"] = signature_nonce + 1
             st.rerun()
 
