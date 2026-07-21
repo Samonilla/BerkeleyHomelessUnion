@@ -656,8 +656,8 @@ def _sc100_signature_anchor() -> tuple[float, float, float, float] | None:
         if not rects:
             return None
 
-        # Page 4 has two "Plaintiff signs here" labels; the lower one is the plaintiff line.
-        target = max(rects, key=lambda r: r.y0)
+        # Page 4 has two labels; the first one is the main plaintiff signature line.
+        target = min(rects, key=lambda r: r.y0)
         page_w = float(page.rect.width)
         page_h = float(page.rect.height)
 
@@ -665,9 +665,9 @@ def _sc100_signature_anchor() -> tuple[float, float, float, float] | None:
         sig_h = 34.0
 
         # Fitz uses top-left origin; place signature just above the label.
-        y_top = max(0.0, float(target.y0) - sig_h - 6.0)
+        y_top = max(0.0, float(target.y0) - sig_h - 2.0)
         y_pdf = page_h - (y_top + sig_h)
-        x_pdf = max(24.0, float(target.x0) - 28.0)
+        x_pdf = max(24.0, float(target.x0) - 34.0)
 
         return (x_pdf / page_w, y_pdf / page_h, sig_w / page_w, sig_h / page_h)
     except Exception:
