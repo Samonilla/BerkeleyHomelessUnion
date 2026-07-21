@@ -504,7 +504,8 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
         non_signable = label_key.startswith("fw003") or label_key.startswith("sc107")
 
         fname = f"{slug}_{lbl.lower().replace('-', '')}.pdf"
-        signed_key = f"signed_{slug}_{lbl}"
+        sig_hash = hashlib.sha256(signature_png).hexdigest()[:12] if signature_png else "nosig"
+        signed_key = f"signed_v2_{slug}_{label_key}_{sig_hash}"
         with st.expander(lbl, expanded=False):
             download_label = f"⬇️ Download {lbl}"
             if label_key.startswith("sc107"):
@@ -668,9 +669,13 @@ def _sc100_signature_anchor() -> tuple[float, float, float, float] | None:
         page_w = float(page.mediabox.width)
         page_h = float(page.mediabox.height)
 
-        annots = page.get("/Annots")
-        if hasattr(annots, "get_object"):
-            annots = annots.get_object()
+        annots_obj = page.get("/Annots")
+        if not annots_obj:
+            return None
+        try:
+            annots = annots_obj.get_object()
+        except Exception:
+            annots = annots_obj
         if not annots:
             return None
 
@@ -718,6 +723,7 @@ def _fw001_signature_anchor() -> tuple[float, float, float, float] | None:
     try:
         import fitz
 
+        tpl = str(_TPL / "fw001.pdf")
         doc = fitz.open(tpl)
         page = doc[0]
         page_w = float(page.rect.width)

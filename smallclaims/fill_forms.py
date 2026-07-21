@@ -440,6 +440,8 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
     values = {
         # Header
         "SC-100[0].Page1[0].CaptionRight[0].County[0].CourtInfo[0]": _court_info(case),
+        "SC-100[0].Page1[0].CaptionRight[0].CaseName[0]": _case_name(case),
+        "SC-100[0].Page1[0].CaptionRight[0].CaseNumber[0]": case.get("case_number", ""),
 
         # Plaintiff
         **_plaintiff_fields(case, {
@@ -532,6 +534,10 @@ def fill_sc100(case, template_path, output_path, field_meta_path):
         # Repeated caption fields
         **{
             f"SC-100[0].Page{page}[0].PxCaption[0].Plaintiff[0]": contact["name"]
+            for page in (2, 3, 4)
+        },
+        **{
+            f"SC-100[0].Page{page}[0].PxCaption[0].CaseNumber[0]": case.get("case_number", "")
             for page in (2, 3, 4)
         },
     }
