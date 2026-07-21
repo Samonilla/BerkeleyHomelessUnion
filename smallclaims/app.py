@@ -501,7 +501,7 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
                     disabled=not signature_png,
                 ):
                     try:
-                        st.session_state[signed_key] = _stamp_signature_on_pdf(data, signature_png)
+                        st.session_state[signed_key] = _stamp_signature_on_pdf(data, signature_png, lbl)
                         current_bytes = st.session_state[signed_key]
                         st.success(f"Signed {lbl}.")
                         st.rerun()
@@ -546,29 +546,7 @@ def _signature_png_bytes() -> bytes | None:
         return None
 
 
-def _typed_signature_png_bytes(name: str) -> bytes | None:
-    text = str(name or "").strip()
-    if not text:
-        return None
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-
-        img = Image.new("RGBA", (700, 180), (255, 255, 255, 0))
-        draw = ImageDraw.Draw(img)
-        try:
-            font = ImageFont.truetype("DejaVuSans-Oblique.ttf", 64)
-        except Exception:
-            font = ImageFont.load_default()
-        draw.text((24, 54), text, fill=(10, 10, 10, 255), font=font)
-
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        return buf.getvalue()
-    except Exception:
-        return None
-
-
-def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes) -> bytes:
+def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str | None = None) -> bytes:
     from pypdf import PdfReader, PdfWriter
     from reportlab.lib.utils import ImageReader
     from reportlab.pdfgen.canvas import Canvas
@@ -577,23 +555,33 @@ def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes) -> bytes:
     writer = PdfWriter()
     signature_image = ImageReader(io.BytesIO(signature_png))
 
+    placement_map = {
+        "SC-100": [(3, 0.64, 0.085, 0.25, 0.06)],
+        "FW-001": [(0, 0.64, 0.12, 0.25, 0.06)],
+        "SC-150": [(0, 0.64, 0.085, 0.25, 0.06)],
+    }
+    placements = placement_map.get(str(label or ""), [])
+    if not placements and reader.pages:
+        placements = [(len(reader.pages) - 1, 0.66, 0.085, 0.24, 0.06)]
+
     for page_number, page in enumerate(reader.pages):
-        should_stamp = page_number == len(reader.pages) - 1
-        if should_stamp:
+        page_placements = [p for p in placements if p[0] == page_number]
+        if page_placements:
             width = float(page.mediabox.width)
             height = float(page.mediabox.height)
             overlay_stream = io.BytesIO()
             overlay_canvas = Canvas(overlay_stream, pagesize=(width, height))
-            overlay_canvas.drawImage(
-                signature_image,
-                width - 205,
-                62,
-                width=150,
-                height=48,
-                mask="auto",
-                preserveAspectRatio=True,
-                anchor="sw",
-            )
+            for _pg, x_frac, y_frac, w_frac, h_frac in page_placements:
+                overlay_canvas.drawImage(
+                    signature_image,
+                    width * x_frac,
+                    height * y_frac,
+                    width=width * w_frac,
+                    height=height * h_frac,
+                    mask="auto",
+                    preserveAspectRatio=True,
+                    anchor="sw",
+                )
             overlay_canvas.save()
             overlay_stream.seek(0)
             overlay_page = PdfReader(overlay_stream).pages[0]
@@ -2500,8 +2488,8 @@ with tab_manual:
         width=700,
         height=190,
         drawing_mode="freedraw",
-        update_streamlit=False,
-        display_toolbar=False,
+        update_streamlit=True,
+        display_toolbar=True,
         key=f"manual_signature_canvas_{signature_nonce}",
     )
     sig_actions1, sig_actions2 = st.columns(2)
@@ -2524,38 +2512,6 @@ with tab_manual:
             st.session_state.pop("manual_signature_png", None)
             st.session_state["manual_signature_nonce"] = signature_nonce + 1
             st.rerun()
-
-    typed_signature = st.text_input(
-        "Type your signature (fallback)",
-        key="manual_signature_typed",
-        placeholder="Type your full name",
-    )
-    if st.button("Use typed signature", key="manual_signature_typed_save", use_container_width=True):
-        typed_png = _typed_signature_png_bytes(typed_signature)
-        if typed_png:
-            st.session_state["manual_signature_png"] = typed_png
-            st.session_state.pop("manual_signature_image", None)
-            st.success("Typed signature saved. You can now sign individual PDFs below.")
-        else:
-            st.warning("Type your name first, then click Use typed signature.")
-
-    st.caption("If drawing still does not work on your device, upload a signature image instead (PNG/JPG).")
-    sig_upload = st.file_uploader(
-        "Upload signature image (optional fallback)",
-        type=["png", "jpg", "jpeg"],
-        key="manual_signature_upload",
-    )
-    if sig_upload is not None:
-        try:
-            from PIL import Image
-
-            uploaded_img = Image.open(io.BytesIO(sig_upload.getvalue())).convert("RGBA")
-            uploaded_array = np.asarray(uploaded_img)
-            st.session_state["manual_signature_image"] = uploaded_array
-            st.session_state["manual_signature_png"] = _signature_png_bytes()
-            st.success("Uploaded signature saved. You can now sign individual PDFs below.")
-        except Exception as exc:
-            st.error(f"Could not read uploaded signature image: {exc}")
 
     if st.session_state.get("manual_signature_png"):
         st.caption("Signature ready.")
