@@ -648,6 +648,35 @@ def _render_signature_pad(storage_key: str) -> None:
         )
 
 
+def _sc100_signature_anchor() -> tuple[float, float, float, float] | None:
+    """Return (x_frac, y_frac, w_frac, h_frac) above 'Plaintiff signs here'."""
+    try:
+        import fitz
+
+        doc = fitz.open(str(_TPL / "sc100.pdf"))
+        page = doc[3]
+        rects = page.search_for("Plaintiff signs here") or page.search_for("plaintiff signs here")
+        if not rects:
+            return None
+
+        # Page 4 has two "Plaintiff signs here" labels; the lower one is the plaintiff line.
+        target = max(rects, key=lambda r: r.y0)
+        page_w = float(page.rect.width)
+        page_h = float(page.rect.height)
+
+        sig_w = 170.0
+        sig_h = 34.0
+
+        # Fitz uses top-left origin; place signature just above the label.
+        y_top = max(0.0, float(target.y0) - sig_h - 6.0)
+        y_pdf = page_h - (y_top + sig_h)
+        x_pdf = max(24.0, float(target.x0) - 28.0)
+
+        return (x_pdf / page_w, y_pdf / page_h, sig_w / page_w, sig_h / page_h)
+    except Exception:
+        return None
+
+
 def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str | None = None) -> bytes:
     from pypdf import PdfReader, PdfWriter
     from reportlab.lib.utils import ImageReader
@@ -657,8 +686,9 @@ def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str |
     writer = PdfWriter()
     signature_image = ImageReader(io.BytesIO(signature_png))
 
+    sc100_anchor = _sc100_signature_anchor()
     placement_map = {
-        "SC-100": [(3, 0.62, 0.132, 0.28, 0.05)],
+        "SC-100": [(3, *sc100_anchor)] if sc100_anchor else [(3, 0.62, 0.132, 0.28, 0.05)],
         "FW-001": [(0, 0.64, 0.12, 0.25, 0.06)],
         "SC-150": [(0, 0.64, 0.085, 0.25, 0.06)],
     }
