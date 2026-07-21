@@ -717,44 +717,22 @@ def _fw001_signature_anchor() -> tuple[float, float, float, float] | None:
     """Return (x_frac, y_frac, w_frac, h_frac) for FW-001 petitioner signature line."""
     try:
         import fitz
-        from pypdf import PdfReader
-
-        tpl = str(_TPL / "fw001.pdf")
-        reader = PdfReader(tpl)
-        page = reader.pages[0]
-        page_w = float(page.mediabox.width)
-        page_h = float(page.mediabox.height)
-
-        annots = page.get("/Annots")
-        if hasattr(annots, "get_object"):
-            annots = annots.get_object()
-        if not annots:
-            return None
-
-        name_rect = None
-        for ref in annots:
-            annot = ref.get_object()
-            t = str(annot.get("/T") or "")
-            parent = annot.get("/Parent")
-            pt = str(parent.get_object().get("/T") or "") if parent else ""
-            name = t or pt
-            if "PetitionerName[0]" in name:
-                name_rect = annot.get("/Rect")
-                break
-        if not name_rect:
-            return None
-
-        x0, _y0, _x1, _y1 = [float(v) for v in name_rect]
 
         doc = fitz.open(tpl)
-        rects = doc[0].search_for("Print your name here")
+        page = doc[0]
+        page_w = float(page.rect.width)
+        page_h = float(page.rect.height)
+
+        rects = page.search_for("sign here") or page.search_for("Sign here") or page.search_for("sign")
         if not rects:
             return None
-        label = rects[0]
+
+        # The rightmost hit corresponds to the petitioner signature label/line.
+        label = max(rects, key=lambda r: r.x0)
 
         sig_w = 170.0
         sig_h = 28.0
-        x_pdf = max(24.0, x0 + 85.0)
+        x_pdf = max(24.0, float(label.x0) - 92.0)
         y_top = max(0.0, float(label.y0) - sig_h - 1.0)
         y_pdf = page_h - (y_top + sig_h)
 
