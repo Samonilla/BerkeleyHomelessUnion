@@ -460,6 +460,11 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
     st.success(f"{prefix}Generated {len(pdfs)} forms.")
     signature_png = _signature_png_bytes()
     if not signature_png:
+        cached_png = _png_from_data_url(st.session_state.get("manual_signature_data_url"))
+        if cached_png:
+            st.session_state["manual_signature_png"] = cached_png
+            signature_png = cached_png
+    if not signature_png:
         st.warning("Draw your signature above before signing individual PDFs.")
     zip_bytes = _make_zip(pdfs, slug, flatten=False)
     st.download_button(
@@ -545,11 +550,12 @@ def _signature_png_bytes() -> bytes | None:
 
 
 def _png_from_data_url(raw: str | None) -> bytes | None:
-    value = str(raw or "")
-    if not value.startswith("data:image/png;base64,"):
+    value = str(raw or "").strip().strip('"').strip("'")
+    if "base64," not in value:
         return None
     try:
-        return base64.b64decode(value.split(",", 1)[1])
+        payload = value.split("base64,", 1)[1].strip()
+        return base64.b64decode(payload)
     except Exception:
         return None
 
@@ -2575,7 +2581,7 @@ with tab_manual:
         _sig_storage_key,
         component_key=f"manual_sig_storage_{signature_nonce}",
     )
-    if isinstance(stored_signature_data, str) and stored_signature_data.startswith("data:image/png;base64,"):
+    if isinstance(stored_signature_data, str) and "base64," in stored_signature_data:
         st.session_state["manual_signature_data_url"] = stored_signature_data
     sig_actions1, sig_actions2 = st.columns(2)
     with sig_actions1:
