@@ -546,6 +546,28 @@ def _signature_png_bytes() -> bytes | None:
         return None
 
 
+def _typed_signature_png_bytes(name: str) -> bytes | None:
+    text = str(name or "").strip()
+    if not text:
+        return None
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+
+        img = Image.new("RGBA", (700, 180), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("DejaVuSans-Oblique.ttf", 64)
+        except Exception:
+            font = ImageFont.load_default()
+        draw.text((24, 54), text, fill=(10, 10, 10, 255), font=font)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
 def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes) -> bytes:
     from pypdf import PdfReader, PdfWriter
     from reportlab.lib.utils import ImageReader
@@ -2503,7 +2525,21 @@ with tab_manual:
             st.session_state["manual_signature_nonce"] = signature_nonce + 1
             st.rerun()
 
-    st.caption("If drawing does not work on your device, upload a signature image instead (PNG/JPG).")
+    typed_signature = st.text_input(
+        "Type your signature (fallback)",
+        key="manual_signature_typed",
+        placeholder="Type your full name",
+    )
+    if st.button("Use typed signature", key="manual_signature_typed_save", use_container_width=True):
+        typed_png = _typed_signature_png_bytes(typed_signature)
+        if typed_png:
+            st.session_state["manual_signature_png"] = typed_png
+            st.session_state.pop("manual_signature_image", None)
+            st.success("Typed signature saved. You can now sign individual PDFs below.")
+        else:
+            st.warning("Type your name first, then click Use typed signature.")
+
+    st.caption("If drawing still does not work on your device, upload a signature image instead (PNG/JPG).")
     sig_upload = st.file_uploader(
         "Upload signature image (optional fallback)",
         type=["png", "jpg", "jpeg"],
