@@ -676,12 +676,24 @@ def _sc100_signature_anchor() -> tuple[float, float, float, float] | None:
 
 def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str | None = None) -> bytes:
     from pypdf import PdfReader, PdfWriter
+    from PIL import Image
     from reportlab.lib.utils import ImageReader
     from reportlab.pdfgen.canvas import Canvas
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
     writer = PdfWriter()
-    signature_image = ImageReader(io.BytesIO(signature_png))
+
+    # Force white-ish background pixels to transparent so underlying
+    # form text stays visible when the signature is stamped.
+    sig_img = Image.open(io.BytesIO(signature_png)).convert("RGBA")
+    rgba = np.array(sig_img)
+    white = (rgba[:, :, 0] > 245) & (rgba[:, :, 1] > 245) & (rgba[:, :, 2] > 245)
+    rgba[white, 3] = 0
+    cleaned = Image.fromarray(rgba, mode="RGBA")
+    cleaned_buf = io.BytesIO()
+    cleaned.save(cleaned_buf, format="PNG")
+    cleaned_buf.seek(0)
+    signature_image = ImageReader(cleaned_buf)
 
     sc100_anchor = _sc100_signature_anchor()
     placement_map = {
@@ -707,7 +719,7 @@ def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str |
                     height * y_frac,
                     width=width * w_frac,
                     height=height * h_frac,
-                    mask="auto",
+                    mask=[245, 255, 245, 255, 245, 255],
                     preserveAspectRatio=True,
                     anchor="sw",
                 )
