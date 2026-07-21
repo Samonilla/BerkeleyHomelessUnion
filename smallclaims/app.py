@@ -2678,22 +2678,47 @@ with tab_manual:
                     _remember_claimant_case(case["internal_case_number"])
                 except Exception:
                     pass
-                _show_downloads(pdfs, _slug(name.strip()))
-                if gen_warnings:
-                    st.warning(
-                        "Some optional forms could not be generated:\n- "
-                        + "\n- ".join(gen_warnings[:8])
-                    )
-                st.download_button(
-                    "💾  Save Case Data (JSON)",
-                    data=json.dumps(case, indent=2).encode(),
-                    file_name=f"{case['internal_case_number']}_{_slug(name.strip())}_case.json",
-                    mime="application/json",
+                st.session_state["manual_generated_pdfs"] = pdfs
+                st.session_state["manual_generated_slug"] = _slug(name.strip())
+                st.session_state["manual_generated_warnings"] = gen_warnings
+                st.session_state["manual_generated_case_json"] = json.dumps(case, indent=2).encode()
+                st.session_state["manual_generated_case_filename"] = (
+                    f"{case['internal_case_number']}_{_slug(name.strip())}_case.json"
                 )
             except ValueError as e:
                 st.error(str(e))
             except Exception as e:
                 st.error(f"Unexpected error: {e}")
+
+    if st.session_state.get("manual_generated_pdfs"):
+        st.divider()
+        st.subheader("Review and Sign Generated PDFs")
+        st.caption(
+            "How to apply your signature: save your signature above, open each PDF section below, "
+            "click Sign for that specific form, then download that signed file."
+        )
+        _show_downloads(
+            st.session_state["manual_generated_pdfs"],
+            st.session_state.get("manual_generated_slug", _slug(name.strip())),
+        )
+        if st.session_state.get("manual_generated_warnings"):
+            st.warning(
+                "Some optional forms could not be generated:\n- "
+                + "\n- ".join((st.session_state.get("manual_generated_warnings") or [])[:8])
+            )
+        st.download_button(
+            "💾  Save Case Data (JSON)",
+            data=st.session_state.get("manual_generated_case_json", b"{}"),
+            file_name=st.session_state.get("manual_generated_case_filename", "case.json"),
+            mime="application/json",
+        )
+        if st.button("Clear generated packet", key="manual_generated_clear"):
+            st.session_state.pop("manual_generated_pdfs", None)
+            st.session_state.pop("manual_generated_slug", None)
+            st.session_state.pop("manual_generated_warnings", None)
+            st.session_state.pop("manual_generated_case_json", None)
+            st.session_state.pop("manual_generated_case_filename", None)
+            st.rerun()
 
 
     # ════════════════════════════════════════════════════
