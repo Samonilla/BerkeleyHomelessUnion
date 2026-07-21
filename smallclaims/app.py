@@ -2478,7 +2478,7 @@ with tab_manual:
                 total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300", key="manual_total_expenses")
 
     st.markdown("**Signature in browser**")
-    st.caption("Draw your signature below, then click Save drawn signature.")
+    st.caption("Draw your signature below, then click Create signature.")
     signature_nonce = int(st.session_state.get("manual_signature_nonce", 0))
     sig_result = st_canvas(
         fill_color="rgba(255, 255, 255, 0)",
@@ -2494,7 +2494,7 @@ with tab_manual:
     )
     sig_actions1, sig_actions2 = st.columns(2)
     with sig_actions1:
-        if st.button("Save drawn signature", key="manual_signature_capture", use_container_width=True):
+        if st.button("Create signature", key="manual_signature_capture", use_container_width=True):
             saved = False
             if sig_result and sig_result.image_data is not None:
                 image_array = np.asarray(sig_result.image_data)
@@ -2505,7 +2505,7 @@ with tab_manual:
             if saved:
                 st.success("Signature saved. You can now sign individual PDFs below.")
             else:
-                st.warning("Draw a signature first, then click Save drawn signature.")
+                st.warning("Draw a signature first, then click Create signature.")
     with sig_actions2:
         if st.button("Clear signature", key="manual_signature_clear", use_container_width=True):
             st.session_state.pop("manual_signature_image", None)
