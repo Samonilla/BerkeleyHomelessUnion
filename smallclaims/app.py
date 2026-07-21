@@ -340,12 +340,10 @@ def _generate_pdfs(case: dict) -> tuple[dict, list[str]]:
             # plus Attachment 2a / 3 / 4 pages (only if subpoena info present)
             _sub = case.get("subpoena", {}) or {}
             if any(r for r in (_sub.get("requests") or []) if r) or (_sub.get("to") or "").strip():
-                _attempt(
-                    "SC-107",
-                    lambda: fill_sc107(case, str(_TPL / "sc107.pdf"), str(tmp / "sc107.pdf")),
-                    tmp / "sc107.pdf",
-                    optional=True,
-                )
+                try:
+                    result["SC-107"] = (_TPL / "sc107.pdf").read_bytes()
+                except Exception as exc:
+                    warnings.append(f"SC-107 failed: {exc}")
 
             # SC-100A: generate one form per additional defendant (if present)
             for i, ad in enumerate(case.get('additional_defendants', []) or [] , start=1):
@@ -503,20 +501,25 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
         )
     for lbl, data in pdfs.items():
         label_key = _label_token(lbl)
-        if label_key.startswith("fw003") or label_key.startswith("sc107"):
-            continue
+        non_signable = label_key.startswith("fw003") or label_key.startswith("sc107")
 
         fname = f"{slug}_{lbl.lower().replace('-', '')}.pdf"
         signed_key = f"signed_{slug}_{lbl}"
         with st.expander(lbl, expanded=False):
+            download_label = f"⬇️ Download {lbl}"
+            if label_key.startswith("sc107"):
+                download_label = "⬇️ Download blank SC-107"
             st.download_button(
-                f"⬇️ Download {lbl}",
+                download_label,
                 data=data,
                 file_name=fname,
                 mime="application/pdf",
                 width="stretch",
                 key=f"pdf_{slug}_{lbl}_unsigned",
             )
+
+            if non_signable:
+                continue
 
             signed_bytes = st.session_state.get(signed_key)
             if signature_png and signed_bytes is None:
@@ -772,18 +775,16 @@ def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str |
     reader = PdfReader(io.BytesIO(pdf_bytes))
     writer = PdfWriter()
 
-    # Remove pad background so only ink is stamped over the form.
+    # Keep signature ink fully visible; remove white background only when
+    # the image is truly opaque (fallback for browsers/components that export
+    # opaque white PNGs).
     sig_img = Image.open(io.BytesIO(signature_png)).convert("RGBA")
     rgba = np.array(sig_img)
-    corners = np.array(
-        [rgba[0, 0, :3], rgba[0, -1, :3], rgba[-1, 0, :3], rgba[-1, -1, :3]],
-        dtype=np.int16,
-    )
-    bg = np.median(corners, axis=0)
-    dist = np.sqrt(np.sum((rgba[:, :, :3].astype(np.int16) - bg) ** 2, axis=2))
-    bright = (rgba[:, :, 0] > 220) & (rgba[:, :, 1] > 220) & (rgba[:, :, 2] > 220)
-    bg_like = (dist < 36) | bright
-    rgba[bg_like, 3] = 0
+    alpha = rgba[:, :, 3]
+    has_transparency = bool(np.any(alpha < 250))
+    if not has_transparency:
+        near_white = (rgba[:, :, 0] > 245) & (rgba[:, :, 1] > 245) & (rgba[:, :, 2] > 245)
+        rgba[near_white, 3] = 0
     cleaned = Image.fromarray(rgba, mode="RGBA")
     cleaned_buf = io.BytesIO()
     cleaned.save(cleaned_buf, format="PNG")
