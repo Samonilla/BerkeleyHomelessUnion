@@ -579,8 +579,6 @@ def _render_signature_pad(storage_key: str) -> None:
                 <script>
                     const canvas = document.getElementById('sigpad');
                     const ctx = canvas.getContext('2d');
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
                     ctx.lineWidth = 4;
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
@@ -597,8 +595,6 @@ def _render_signature_pad(storage_key: str) -> None:
 
                     function clearPad() {{
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
                         try {{ localStorage.removeItem(key); }} catch (e) {{}}
                     }}
 
