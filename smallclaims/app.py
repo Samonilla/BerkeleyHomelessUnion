@@ -502,6 +502,10 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
             key=f"zip_flat_{slug}",
         )
     for lbl, data in pdfs.items():
+        label_key = _label_token(lbl)
+        if label_key.startswith("fw003") or label_key.startswith("sc107"):
+            continue
+
         fname = f"{slug}_{lbl.lower().replace('-', '')}.pdf"
         signed_key = f"signed_{slug}_{lbl}"
         with st.expander(lbl, expanded=False):
@@ -645,29 +649,114 @@ def _render_signature_pad(storage_key: str) -> None:
         )
 
 
+def _label_token(label: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(label or "").lower())
+
+
 def _sc100_signature_anchor() -> tuple[float, float, float, float] | None:
-    """Return (x_frac, y_frac, w_frac, h_frac) above 'Plaintiff signs here'."""
+    """Return (x_frac, y_frac, w_frac, h_frac) for SC-100 first plaintiff signature line."""
     try:
         import fitz
+        from pypdf import PdfReader
 
-        doc = fitz.open(str(_TPL / "sc100.pdf"))
-        page = doc[3]
-        rects = page.search_for("Plaintiff signs here") or page.search_for("plaintiff signs here")
-        if not rects:
+        tpl = str(_TPL / "sc100.pdf")
+        reader = PdfReader(tpl)
+        page = reader.pages[3]
+        page_w = float(page.mediabox.width)
+        page_h = float(page.mediabox.height)
+
+        annots = page.get("/Annots")
+        if hasattr(annots, "get_object"):
+            annots = annots.get_object()
+        if not annots:
             return None
 
-        # Page 4 has two labels; the first one is the main plaintiff signature line.
-        target = min(rects, key=lambda r: r.y0)
-        page_w = float(page.rect.width)
-        page_h = float(page.rect.height)
+        target_rect = None
+        for ref in annots:
+            annot = ref.get_object()
+            t = str(annot.get("/T") or "")
+            parent = annot.get("/Parent")
+            pt = str(parent.get_object().get("/T") or "") if parent else ""
+            name = t or pt
+            if "PlaintiffName1[0]" in name:
+                target_rect = annot.get("/Rect")
+                break
+
+        if not target_rect:
+            return None
+
+        x0, _y0, _x1, _y1 = [float(v) for v in target_rect]
+
+        doc = fitz.open(tpl)
+        rects = doc[3].search_for("Plaintiff signs here") or doc[3].search_for("plaintiff signs here")
+        if not rects:
+            return None
+        first_label = min(rects, key=lambda r: r.y0)
+
+        # Use first 'Plaintiff signs here' label for vertical alignment and
+        # PlaintiffName1 field for horizontal alignment.
+        sig_w = 170.0
+        sig_h = 30.0
+        x_pdf = max(24.0, x0 + 85.0)
+        y_top = max(0.0, float(first_label.y0) - sig_h - 1.0)
+        y_pdf = page_h - (y_top + sig_h)
+
+        # Keep visible on page bounds.
+        x_pdf = min(x_pdf, page_w - sig_w - 24.0)
+        y_pdf = min(max(24.0, y_pdf), page_h - sig_h - 24.0)
+
+        return (x_pdf / page_w, y_pdf / page_h, sig_w / page_w, sig_h / page_h)
+    except Exception:
+        return None
+
+
+def _fw001_signature_anchor() -> tuple[float, float, float, float] | None:
+    """Return (x_frac, y_frac, w_frac, h_frac) for FW-001 petitioner signature line."""
+    try:
+        import fitz
+        from pypdf import PdfReader
+
+        tpl = str(_TPL / "fw001.pdf")
+        reader = PdfReader(tpl)
+        page = reader.pages[0]
+        page_w = float(page.mediabox.width)
+        page_h = float(page.mediabox.height)
+
+        annots = page.get("/Annots")
+        if hasattr(annots, "get_object"):
+            annots = annots.get_object()
+        if not annots:
+            return None
+
+        name_rect = None
+        for ref in annots:
+            annot = ref.get_object()
+            t = str(annot.get("/T") or "")
+            parent = annot.get("/Parent")
+            pt = str(parent.get_object().get("/T") or "") if parent else ""
+            name = t or pt
+            if "PetitionerName[0]" in name:
+                name_rect = annot.get("/Rect")
+                break
+        if not name_rect:
+            return None
+
+        x0, _y0, _x1, _y1 = [float(v) for v in name_rect]
+
+        doc = fitz.open(tpl)
+        rects = doc[0].search_for("Print your name here")
+        if not rects:
+            return None
+        label = rects[0]
 
         sig_w = 170.0
-        sig_h = 34.0
-
-        # Fitz uses top-left origin; place signature just above the label.
-        y_top = max(0.0, float(target.y0) - sig_h - 2.0)
+        sig_h = 28.0
+        x_pdf = max(24.0, x0 + 85.0)
+        y_top = max(0.0, float(label.y0) - sig_h - 1.0)
         y_pdf = page_h - (y_top + sig_h)
-        x_pdf = max(24.0, float(target.x0) - 34.0)
+
+        x_pdf = min(x_pdf, page_w - sig_w - 24.0)
+        y_pdf = min(max(24.0, y_pdf), page_h - sig_h - 24.0)
 
         return (x_pdf / page_w, y_pdf / page_h, sig_w / page_w, sig_h / page_h)
     except Exception:
@@ -683,12 +772,18 @@ def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str |
     reader = PdfReader(io.BytesIO(pdf_bytes))
     writer = PdfWriter()
 
-    # Force white-ish background pixels to transparent so underlying
-    # form text stays visible when the signature is stamped.
+    # Remove pad background so only ink is stamped over the form.
     sig_img = Image.open(io.BytesIO(signature_png)).convert("RGBA")
     rgba = np.array(sig_img)
-    white = (rgba[:, :, 0] > 245) & (rgba[:, :, 1] > 245) & (rgba[:, :, 2] > 245)
-    rgba[white, 3] = 0
+    corners = np.array(
+        [rgba[0, 0, :3], rgba[0, -1, :3], rgba[-1, 0, :3], rgba[-1, -1, :3]],
+        dtype=np.int16,
+    )
+    bg = np.median(corners, axis=0)
+    dist = np.sqrt(np.sum((rgba[:, :, :3].astype(np.int16) - bg) ** 2, axis=2))
+    bright = (rgba[:, :, 0] > 220) & (rgba[:, :, 1] > 220) & (rgba[:, :, 2] > 220)
+    bg_like = (dist < 36) | bright
+    rgba[bg_like, 3] = 0
     cleaned = Image.fromarray(rgba, mode="RGBA")
     cleaned_buf = io.BytesIO()
     cleaned.save(cleaned_buf, format="PNG")
@@ -696,12 +791,16 @@ def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str |
     signature_image = ImageReader(cleaned_buf)
 
     sc100_anchor = _sc100_signature_anchor()
-    placement_map = {
-        "SC-100": [(3, *sc100_anchor)] if sc100_anchor else [(3, 0.62, 0.132, 0.28, 0.05)],
-        "FW-001": [(0, 0.64, 0.12, 0.25, 0.06)],
-        "SC-150": [(0, 0.64, 0.085, 0.25, 0.06)],
-    }
-    placements = placement_map.get(str(label or ""), [])
+    fw001_anchor = _fw001_signature_anchor()
+    label_key = _label_token(label)
+    placements = []
+    if label_key.startswith("sc100"):
+        placements = [(3, *sc100_anchor)] if sc100_anchor else [(3, 0.62, 0.132, 0.28, 0.05)]
+    elif label_key.startswith("fw001"):
+        placements = [(0, *fw001_anchor)] if fw001_anchor else [(0, 0.64, 0.12, 0.25, 0.06)]
+    elif label_key.startswith("sc150"):
+        placements = [(0, 0.64, 0.085, 0.25, 0.06)]
+
     if not placements and reader.pages:
         placements = [(len(reader.pages) - 1, 0.66, 0.085, 0.24, 0.06)]
 
@@ -719,7 +818,7 @@ def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str |
                     height * y_frac,
                     width=width * w_frac,
                     height=height * h_frac,
-                    mask=[245, 255, 245, 255, 245, 255],
+                    mask="auto",
                     preserveAspectRatio=True,
                     anchor="sw",
                 )
@@ -2293,10 +2392,14 @@ with tab_manual:
     if sc100_upload is not None:
         st.session_state["sc100_attachment_bytes"] = sc100_upload.getvalue()
         st.session_state["sc100_attachment_name"] = sc100_upload.name
-        st.caption(f"Will attach: {sc100_upload.name}")
-    else:
-        st.session_state.pop("sc100_attachment_bytes", None)
-        st.session_state.pop("sc100_attachment_name", None)
+    attached_name = st.session_state.get("sc100_attachment_name")
+    attached_bytes = st.session_state.get("sc100_attachment_bytes")
+    if attached_name and attached_bytes:
+        st.caption(f"Will attach: {attached_name}")
+        if st.button("Remove attached PDF", key="manual_remove_sc100_attachment"):
+            st.session_state.pop("sc100_attachment_bytes", None)
+            st.session_state.pop("sc100_attachment_name", None)
+            st.rerun()
 
     # ── List your damages (used on the claim form, declaration, SC-100) ─
     st.divider()
