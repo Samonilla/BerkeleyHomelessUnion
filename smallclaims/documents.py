@@ -3,6 +3,15 @@ import re
 import textwrap
 
 
+def _case_name(case: dict) -> str:
+    plaintiff_name = str((case.get("plaintiff") or {}).get("name") or "Plaintiff").strip()
+    defendant = case.get("defendant") or {}
+    defendant_name = str(defendant.get("name") or "Defendant").strip()
+    if case.get("additional_defendants"):
+        defendant_name = f"{defendant_name}, et al."
+    return f"{plaintiff_name} v. {defendant_name}"
+
+
 def _normalize_plain_language(text: str) -> str:
     text = re.sub(r"\s+", " ", text or "").strip()
     if not text:
@@ -202,10 +211,7 @@ def build_exhibit_covers_pdf(exhibits: list[dict], case: dict) -> bytes:
     c = canvas.Canvas(buf, pagesize=letter)
     width, height = letter
 
-    case_name = (
-        f"{(case.get('plaintiff') or {}).get('name', 'Plaintiff')} v. "
-        f"{(case.get('defendant') or {}).get('name', 'Defendant')}"
-    )
+    case_name = _case_name(case)
 
     for idx, ex in enumerate(exhibits):
         label = f"Exhibit {chr(65 + idx)}"

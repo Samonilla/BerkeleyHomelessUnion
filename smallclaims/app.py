@@ -34,6 +34,7 @@ from fill_forms import (
     fill_sc105, fill_sc107, fill_sc109, fill_sc100a_for_party,
     validate_case, has_postponement, DEFENDANT_DEFAULTS,
     _SC107_DEFAULT_GOOD_CAUSE, _SC107_DEFAULT_MATERIALITY,
+    _case_name as _shared_case_name,
 )
 from courts import ALL_COUNTIES, courthouses_for_county, court_info_string
 from defendants import ALL_CITIES, defendant_info
@@ -909,7 +910,7 @@ def template_row_to_case(row: pd.Series) -> dict:
             items.append({"description": desc, "value": val})
 
     reason = s("claim_reason")
-    return {
+    case = {
         "plaintiff": {
             "name":   s("plaintiff_name"),
             "street": s("plaintiff_street"),
@@ -973,6 +974,10 @@ def template_row_to_case(row: pd.Series) -> dict:
             "materiality": s("subpoena_materiality"),
         },
     }
+    case.setdefault("subpoena", {})["case_caption"] = (
+        case.get("subpoena", {}).get("case_caption") or _shared_case_name(case)
+    )
+    return case
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2724,7 +2729,7 @@ with tab_manual:
                 ),
             },
             "subpoena": {
-                "case_caption":     f"{name.strip()} v. {_primary_defendant.get('name') or 'City of Oakland'}",
+                "case_caption":     "",
                 "to":               st.session_state.get("sub_recipient_name", "").strip(),
                 "custodian":        st.session_state.get("sub_recipient_custodian", "").strip(),
                 "service_location": st.session_state.get("sub_recipient_service", "").strip(),
@@ -2743,6 +2748,7 @@ with tab_manual:
         case["additional_defendants"] = [
             dd for dd in manual_defendants[1:] if dd.get("name")
         ]
+        case.setdefault("subpoena", {})["case_caption"] = _shared_case_name(case)
         return case
 
     manual_case = _manual_case_from_inputs()
