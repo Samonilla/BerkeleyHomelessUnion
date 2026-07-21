@@ -460,6 +460,13 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
     st.success(f"{prefix}Generated {len(pdfs)} forms.")
     signature_png = _signature_png_bytes()
     if not signature_png:
+        live_signature_data = get_local_storage(
+            "bhu_signature_pad_data",
+            component_key=f"manual_sig_storage_download_{slug}",
+        )
+        if isinstance(live_signature_data, str) and "base64," in live_signature_data:
+            st.session_state["manual_signature_data_url"] = live_signature_data
+    if not signature_png:
         cached_png = _png_from_data_url(st.session_state.get("manual_signature_data_url"))
         if cached_png:
             st.session_state["manual_signature_png"] = cached_png
@@ -521,7 +528,7 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
                 mime="application/pdf",
                 width="stretch",
                 key=f"pdf_{slug}_{lbl}_signed",
-                disabled=not signature_png,
+                disabled=signed_bytes is None,
             )
 
 
