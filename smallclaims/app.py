@@ -658,7 +658,7 @@ def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_png: bytes, label: str |
     signature_image = ImageReader(io.BytesIO(signature_png))
 
     placement_map = {
-        "SC-100": [(3, 0.64, 0.085, 0.25, 0.06)],
+        "SC-100": [(3, 0.64, 0.108, 0.25, 0.06)],
         "FW-001": [(0, 0.64, 0.12, 0.25, 0.06)],
         "SC-150": [(0, 0.64, 0.085, 0.25, 0.06)],
     }
