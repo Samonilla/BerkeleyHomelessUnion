@@ -492,39 +492,31 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
         fname = f"{slug}_{lbl.lower().replace('-', '')}.pdf"
         signed_key = f"signed_{slug}_{lbl}"
         with st.expander(lbl, expanded=False):
-            current_bytes = st.session_state.get(signed_key, data)
-            st.caption("Review this PDF, then click the sign button to stamp your browser signature onto it.")
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                if st.button(
-                    f"Sign {lbl}",
-                    key=f"sign_{slug}_{lbl}",
-                    use_container_width=True,
-                    disabled=not signature_png,
-                ):
-                    try:
-                        st.session_state[signed_key] = _stamp_signature_on_pdf(data, signature_png, lbl)
-                        current_bytes = st.session_state[signed_key]
-                        st.success(f"Signed {lbl}.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Could not sign {lbl}: {exc}")
-            with c2:
-                if st.button(
-                    f"Clear signature for {lbl}",
-                    key=f"clear_{slug}_{lbl}",
-                    use_container_width=True,
-                    disabled=signed_key not in st.session_state,
-                ):
-                    st.session_state.pop(signed_key, None)
-                    st.rerun()
             st.download_button(
                 f"⬇️ Download {lbl}",
-                data=current_bytes,
+                data=data,
                 file_name=fname,
                 mime="application/pdf",
                 width="stretch",
-                key=f"pdf_{slug}_{lbl}",
+                key=f"pdf_{slug}_{lbl}_unsigned",
+            )
+
+            signed_bytes = st.session_state.get(signed_key)
+            if signature_png and signed_bytes is None:
+                try:
+                    signed_bytes = _stamp_signature_on_pdf(data, signature_png, lbl)
+                    st.session_state[signed_key] = signed_bytes
+                except Exception as exc:
+                    st.error(f"Could not prepare signed {lbl}: {exc}")
+
+            st.download_button(
+                f"✍️ Sign and Download {lbl}",
+                data=signed_bytes or data,
+                file_name=fname,
+                mime="application/pdf",
+                width="stretch",
+                key=f"pdf_{slug}_{lbl}_signed",
+                disabled=not signature_png,
             )
 
 
@@ -548,6 +540,16 @@ def _signature_png_bytes() -> bytes | None:
         buf = io.BytesIO()
         image.save(buf, format="PNG")
         return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _png_from_data_url(raw: str | None) -> bytes | None:
+    value = str(raw or "")
+    if not value.startswith("data:image/png;base64,"):
+        return None
+    try:
+        return base64.b64decode(value.split(",", 1)[1])
     except Exception:
         return None
 
@@ -2573,18 +2575,16 @@ with tab_manual:
         _sig_storage_key,
         component_key=f"manual_sig_storage_{signature_nonce}",
     )
+    if isinstance(stored_signature_data, str) and stored_signature_data.startswith("data:image/png;base64,"):
+        st.session_state["manual_signature_data_url"] = stored_signature_data
     sig_actions1, sig_actions2 = st.columns(2)
     with sig_actions1:
         if st.button("Save signature", key="manual_signature_capture", use_container_width=True):
             saved = False
-            raw = stored_signature_data if isinstance(stored_signature_data, str) else ""
-            if raw.startswith("data:image/png;base64,"):
-                try:
-                    png_bytes = base64.b64decode(raw.split(",", 1)[1])
-                    st.session_state["manual_signature_png"] = png_bytes
-                    saved = True
-                except Exception:
-                    saved = False
+            png_bytes = _png_from_data_url(st.session_state.get("manual_signature_data_url"))
+            if png_bytes:
+                st.session_state["manual_signature_png"] = png_bytes
+                saved = True
             if saved:
                 st.success("Signature saved. You can now sign individual PDFs below.")
             else:
@@ -2593,6 +2593,7 @@ with tab_manual:
         if st.button("Clear signature", key="manual_signature_clear", use_container_width=True):
             st.session_state.pop("manual_signature_image", None)
             st.session_state.pop("manual_signature_png", None)
+            st.session_state.pop("manual_signature_data_url", None)
             remove_local_storage(_sig_storage_key, component_key=f"manual_sig_clear_store_{signature_nonce}")
             st.session_state["manual_signature_nonce"] = signature_nonce + 1
             st.rerun()
