@@ -2478,18 +2478,18 @@ with tab_manual:
                 total_expenses = st.text_input("Total Monthly Expenses ($)", placeholder="300", key="manual_total_expenses")
 
     st.markdown("**Signature in browser**")
-    st.caption("Draw your signature below, then click Create signature.")
+    st.caption("Use your mouse (or finger) to draw directly in the white box, then click Create signature.")
     signature_nonce = int(st.session_state.get("manual_signature_nonce", 0))
     sig_result = st_canvas(
         fill_color="rgba(255, 255, 255, 0)",
-        stroke_width=3,
+        stroke_width=4,
         stroke_color="#111111",
         background_color="#ffffff",
         width=700,
         height=190,
         drawing_mode="freedraw",
-        update_streamlit=True,
-        display_toolbar=True,
+        update_streamlit=False,
+        display_toolbar=False,
         key=f"manual_signature_canvas_{signature_nonce}",
     )
     sig_actions1, sig_actions2 = st.columns(2)
