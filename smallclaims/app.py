@@ -459,10 +459,16 @@ def _show_downloads(pdfs: dict, slug: str, label: str = "") -> None:
     st.success(f"{prefix}Generated {len(pdfs)} forms.")
     signature_png = _signature_png_bytes()
     if not signature_png:
+        sig_storage_key = _signature_storage_key()
         live_signature_data = get_local_storage(
-            "bhu_signature_pad_data",
+            sig_storage_key,
             component_key=f"manual_sig_storage_download_{slug}",
         )
+        if not (isinstance(live_signature_data, str) and "base64," in live_signature_data):
+            live_signature_data = get_local_storage(
+                "bhu_signature_pad_data",
+                component_key=f"manual_sig_storage_download_legacy_{slug}",
+            )
         if isinstance(live_signature_data, str) and "base64," in live_signature_data:
             st.session_state["manual_signature_data_url"] = live_signature_data
     if not signature_png:
@@ -655,6 +661,11 @@ def _render_signature_pad(storage_key: str) -> None:
 
 def _label_token(label: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(label or "").lower())
+
+
+def _signature_storage_key() -> str:
+    nonce = int(st.session_state.get("manual_signature_nonce", 0))
+    return f"bhu_signature_pad_data_{nonce}"
 
 
 def _sc100_signature_anchor() -> tuple[float, float, float, float] | None:
@@ -2713,7 +2724,7 @@ with tab_manual:
     st.markdown("**Signature in browser**")
     st.caption("Use your mouse (or finger) to draw directly in the white box, then click Save signature.")
     signature_nonce = int(st.session_state.get("manual_signature_nonce", 0))
-    _sig_storage_key = "bhu_signature_pad_data"
+    _sig_storage_key = _signature_storage_key()
     _render_signature_pad(_sig_storage_key)
     stored_signature_data = get_local_storage(
         _sig_storage_key,
@@ -2739,6 +2750,7 @@ with tab_manual:
             st.session_state.pop("manual_signature_png", None)
             st.session_state.pop("manual_signature_data_url", None)
             remove_local_storage(_sig_storage_key, component_key=f"manual_sig_clear_store_{signature_nonce}")
+            remove_local_storage("bhu_signature_pad_data", component_key=f"manual_sig_clear_store_legacy_{signature_nonce}")
             st.session_state["manual_signature_nonce"] = signature_nonce + 1
             st.rerun()
 
